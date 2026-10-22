@@ -1,51 +1,82 @@
 # AI Panel
 
-Dashboard na dodatkowy monitor (np. 1920×1080 albo podłużny 1920×720): sesje Claude Code i Codex, limity, koszty i najbliższe spotkania.
-Działa w całości lokalnie, bez zależności (Python 3 ze standardową biblioteką + mały helper w Swift).
+**English** · [Polski](README.pl.md)
 
-## Źródła danych
+A desk dashboard for a second monitor that shows your **Claude Code** and **Codex** sessions at a glance:
+which ones are waiting for you, usage limits with a forecast, per-chat cost, your next meeting,
+open pull requests with CI status, and service status.
 
-| Co | Skąd |
-|---|---|
-| Sesje Claude Code (desktop i CLI) | `~/.claude/sessions/<pid>.json` (status na żywo) + transkrypty w `~/.claude/projects/` |
-| Wątki Codex (aplikacja i CLI) | `~/.codex/state_*.sqlite` (tabela `threads`) + pliki `rollout-*.jsonl` |
-| Limity 5 h / tygodniowe, koszty | API OpenUsage: `http://127.0.0.1:6736/v1/usage` |
-| Kalendarz | aplikacja Kalendarz (EventKit) → `bin/calendar-helper` → `~/Library/Caches/ai-panel/calendar.json` |
-| Trend 14 dni, koszt i tokeny dziś | API OpenUsage (j.w.) |
-| Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |
-| Pull requesty i CI | `gh api graphql` co 2 min: Twoje otwarte PR-y + PR-y czekające na Twoje review |
-| Status usług | publiczne `status.claude.com` i `status.openai.com` (`/api/v2/summary.json`) co 2 min |
+![AI Panel with demo data](docs/screenshot.png)
 
-Kliknięcie: sesja → aplikacja Claude/Codex (właściwa instancja, także z Parall), PR → przeglądarka,
-spotkanie z linkiem → Teams/Meet. Klient podaje tylko, co otworzyć; adres zawsze pochodzi z danych serwera.
+<sub>Screenshot uses made-up demo data (`AI_PANEL_DEMO=1`). The interface is in Polish.</sub>
 
-Statusy:
-- **Czeka na Ciebie**: Claude zgłasza `waitingFor` (zgoda, pytanie), albo ostatnia odpowiedź agenta kończy się pytajnikiem („Pytanie do Ciebie”).
-- **Pracuje**: Claude `status: busy`; Codex: ostatnie zdarzenie to `task_started`.
-- **Gotowe** / **Przerwane**: tura zakończona / przerwana.
+## Features
 
-„Aktywne” sesje Claude to te z żywym procesem. Codex trzyma wszystkie wątki w jednym procesie,
-więc dla niego aktywne = ruch w ciągu ostatnich 24 h (`CODEX_ACTIVE_HOURS` w `server.py`).
+- **Sessions in two columns (Claude, Codex)**: waiting for you, working, done. Sessions that wait for
+  you are highlighted and counted on the left. Click a session to open it in the app.
+- **Usage limits**: 5-hour and weekly bars with reset time, a forecast when the current pace would
+  run out before the reset, and a banner when a limit is exhausted.
+- **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
+  API prices. A 14-day token trend in each column header.
+- **Calendar**: upcoming meetings from macOS Calendar, with a "Join" bar 10 minutes before a meeting
+  (Teams, Meet, Zoom, Webex links).
+- **Pull requests**: your open PRs and PRs waiting for your review, with CI status.
+- **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
+- **Kiosk mode**: opens full screen on a chosen monitor at login and closes when it is unplugged.
+- Light and dark theme; scales to any resolution (designed for 1920×1080 and 1920×720 bar displays).
 
-## Uruchomienie
+## Requirements
+
+- macOS 14 or later (EventKit calendar access, launchd)
+- Python 3.9+ (the system `python3` is fine; no dependencies)
+- [Claude Code](https://claude.com/claude-code) and/or Codex (app or CLI)
+- [OpenUsage](https://github.com/robinebers/openusage) running, for limits, costs and pricing
+- Google Chrome for kiosk mode
+- Optional: [GitHub CLI](https://cli.github.com) (`gh auth login`) for pull requests
+- Xcode Command Line Tools (`swiftc`) to build the calendar helper
+
+## Install
 
 ```bash
-./install.sh     # usługi launchd: serwer :7319, helper kalendarza i autostart kiosku
-./kiosk.sh       # ręczne otwarcie panelu w Chrome (kiosk na podłużnym ekranie)
-./uninstall.sh   # usuwa usługi
+git clone https://github.com/8itflip/ai-panel.git
+cd ai-panel
+./install.sh
 ```
 
-Kiosk startuje sam: usługa `local.ai-panel.kiosk` co 20 s sprawdza, czy podłączony jest monitor panelu.
-Jeśli tak, otwiera na nim panel w osobnym profilu Chrome; po odłączeniu monitora zamyka to okno,
-żeby nie zostało na pełnym ekranie innego ekranu. Główny ekran nigdy nie jest brany.
+This builds the calendar helper and installs three launchd agents: the server on
+`http://127.0.0.1:7319`, the calendar exporter, and the kiosk watcher. macOS asks once for
+Calendar access.
 
-Który monitor — w lokalnym pliku `kiosk.conf` (poza gitem), nazwa jak w Ustawieniach → Wyświetlacze:
+To pick the monitor for kiosk mode, create `kiosk.conf` with the display name from
+System Settings → Displays:
 
 ```bash
 SCREEN_NAME="M14"
 ```
 
-Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1). Układ skaluje się
-do dowolnej rozdzielczości; projektowany pod 1920×720 i 1920×1080.
+Without it, the first display wider than 2:1 is used. The main display is never used.
 
-Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.
+`./uninstall.sh` removes the agents. Logs are in `~/Library/Logs/ai-panel/`.
+
+## Privacy
+
+Everything runs locally. The server reads local files (Claude Code sessions in `~/.claude`, the Codex
+database in `~/.codex`, the calendar export) and the OpenUsage API on localhost. The only network
+requests are the public Anthropic/OpenAI status pages and the GitHub API through `gh`. Nothing from
+your machine is sent anywhere.
+
+The server listens on `127.0.0.1` only, rejects requests with a foreign `Host` header (DNS
+rebinding), and only opens links that come from its own data, never a URL supplied by the page.
+
+## Development
+
+```bash
+python3 server.py                  # real data
+AI_PANEL_DEMO=1 python3 server.py  # demo data for screenshots
+```
+
+The page reloads itself when files in `static/` change.
+
+## License
+
+[MIT](LICENSE)
