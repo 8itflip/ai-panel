@@ -9,7 +9,8 @@
 //
 // The window follows the display: it appears when the display is connected and goes away when it is
 // unplugged. It covers the whole display, including the menu bar area, and stays above other windows
-// on that display only.
+// on that display only. When another app opens a window there (a screenshot editor, say), the kiosk
+// steps behind it until that window is closed or moved away.
 import AppKit
 import WebKit
 
@@ -115,6 +116,13 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var webView: WKWebView?
     var retry: Timer?
     var activity: NSObjectProtocol?
+    var watch: Timer?
+    var yielding = false
+
+    static let topLevel = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+    /// Owners whose windows on the display are part of the system UI, not something to work in.
+    static let systemOwners: Set<String> = ["Window Server", "Dock", "Control Centre", "Control Center",
+                                            "Notification Centre", "Notification Center", "SystemUIServer"]
 
     init(config: Config) { self.config = config }
 
@@ -126,6 +134,7 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         screensChanged()
+        watch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.yieldIfNeeded() }
     }
 
     /// The panel display, or nil. Never the main display (index 0), so the kiosk cannot take it over.
@@ -150,7 +159,7 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     func makeWindow() -> NSWindow {
         let win = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         // Above the menu bar of its own display; other displays are not affected.
-        win.level = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
+        win.level = Kiosk.topLevel
         win.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenNone]
         win.isReleasedWhenClosed = false
         win.backgroundColor = .black
@@ -171,6 +180,42 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window = win
         webView = web
         return win
+    }
+
+    /// Steps behind other apps' windows on the panel display and comes back on top once they are gone.
+    /// Window positions and owners need no permission; moving other apps' windows would need
+    /// Accessibility access.
+    func yieldIfNeeded() {
+        guard let win = window, win.isVisible, let screen = panelScreen() else { return }
+        let foreign = foreignWindow(on: screen)
+        if foreign && !yielding {
+            yielding = true
+            win.level = .normal
+            win.orderBack(nil)
+        } else if !foreign && yielding {
+            yielding = false
+            win.level = Kiosk.topLevel
+            win.orderFrontRegardless()
+        }
+    }
+
+    func foreignWindow(on screen: NSScreen) -> Bool {
+        // Window bounds use a top-left origin at the top of the main display.
+        let mainHeight = NSScreen.screens.first?.frame.height ?? 0
+        let f = screen.frame
+        let area = CGRect(x: f.minX, y: mainHeight - f.maxY, width: f.width, height: f.height)
+        let me = Int(ProcessInfo.processInfo.processIdentifier)
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]] ?? []
+        return list.contains { w in
+            guard let layer = w[kCGWindowLayer as String] as? Int, (0..<Int(NSWindow.Level.mainMenu.rawValue)).contains(layer),
+                  (w[kCGWindowOwnerPID as String] as? Int) != me,
+                  !Kiosk.systemOwners.contains(w[kCGWindowOwnerName as String] as? String ?? ""),
+                  (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
+                  let b = w[kCGWindowBounds as String] as? [String: CGFloat],
+                  let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
+            return r.width >= 40 && r.height >= 40 && r.intersection(area).width * r.intersection(area).height > 1600
+        }
     }
 
     // Stay on the panel: anything that is not the local server opens in the default browser.
