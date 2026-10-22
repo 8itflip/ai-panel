@@ -33,8 +33,13 @@ CALENDAR_JSON = HOME / "Library" / "Caches" / "ai-panel" / "calendar.json"
 # Model prices from OpenUsage's cache (USD per 1M tokens), the same ones behind the header totals.
 PRICING_DIR = HOME / "Library" / "Application Support" / "OpenUsage" / "pricing"
 
-# Codex has no process per thread, so "active" means activity within the last N hours.
+# Codex has no process per thread, and the Claude app stops idle sessions after about 30 minutes,
+# so "active" means activity within the last N hours (Claude sessions with a live process always count).
 CODEX_ACTIVE_HOURS = 24
+CLAUDE_ACTIVE_HOURS = 24
+# Session lists kept by the Claude desktop app, also for second instances made with Parall.
+CLAUDE_APP_SESSIONS = [HOME / "Library" / "Application Support" / "Claude" / "claude-code-sessions"]
+PARALL_DIR = HOME / "Library" / "Application Support" / "Parall"
 OPENUSAGE_TTL = 20  # s
 
 # Monthly plan price in USD, for the "N× subscription" figure.
@@ -299,6 +304,19 @@ def claude_url(d):
 _instances = {}
 
 
+def parall_instance(app):
+    """(label, bundle ID) of a Claude instance made with Parall, e.g. app "Claude (Work)"."""
+    inner = re.search(r"\(([^)]+)\)", app)  # "Claude (Work)" -> "Work"
+    label, bundle = inner.group(1) if inner else app, CLAUDE_BUNDLE
+    for base in (Path("/Applications"), HOME / "Applications"):
+        try:
+            with open(base / (app + ".app") / "Contents" / "Info.plist", "rb") as f:
+                return label, plistlib.load(f).get("CFBundleIdentifier") or CLAUDE_BUNDLE
+        except (OSError, plistlib.InvalidFileException):
+            continue
+    return label, bundle
+
+
 def claude_instance(pid):
     """(label, bundle ID) of the app that owns the session. A None label means the main Claude app."""
     if pid in _instances:
@@ -308,22 +326,33 @@ def claude_instance(pid):
                              capture_output=True, text=True, timeout=2).stdout
     except (OSError, subprocess.SubprocessError):
         return None, CLAUDE_BUNDLE  # not cached, try again next time
-    result = (None, CLAUDE_BUNDLE)
     m = PARALL_EXE.search(exe)
-    if m:
-        app = m.group(1)
-        inner = re.search(r"\(([^)]+)\)", app)  # "Claude (Work)" -> "Work"
-        label, bundle = inner.group(1) if inner else app, CLAUDE_BUNDLE
-        for base in (Path("/Applications"), HOME / "Applications"):
-            try:
-                with open(base / (app + ".app") / "Contents" / "Info.plist", "rb") as f:
-                    bundle = plistlib.load(f).get("CFBundleIdentifier") or CLAUDE_BUNDLE
-                break
-            except (OSError, plistlib.InvalidFileException):
-                continue
-        result = (label, bundle)
+    result = parall_instance(m.group(1)) if m else (None, CLAUDE_BUNDLE)
     _instances[pid] = result
     return result
+
+
+def claude_app_sessions(cutoff):
+    """Sessions listed by the Claude desktop app (main and Parall instances), active after cutoff.
+
+    The app stops a session's process after about 30 minutes without activity, so these include
+    sessions that are still in the app's sidebar but no longer have a live process."""
+    roots = [(d, (None, CLAUDE_BUNDLE)) for d in CLAUDE_APP_SESSIONS]
+    if PARALL_DIR.is_dir():
+        roots += [(p / "claude-code-sessions", parall_instance(p.name)) for p in PARALL_DIR.iterdir()]
+    out = []
+    for root, instance in roots:
+        for f in root.glob("*/*/local_*.json"):
+            try:
+                if os.stat(f).st_mtime * 1000 < cutoff:
+                    continue  # quick skip of old sessions without parsing them
+                d = json.loads(f.read_text())
+            except (OSError, ValueError):
+                continue
+            if d.get("isArchived") or (d.get("lastActivityAt") or 0) < cutoff or not d.get("cliSessionId"):
+                continue
+            out.append((d, instance))
+    return out
 
 
 _mem = {"at": 0, "rss": {}, "children": {}, "memo": {}}
@@ -411,6 +440,7 @@ def claude_sessions():
     now = now_ms()
     alive = with_status = 0
     _health.pop("claude", None)
+    live_ids = set()
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             d = json.loads(f.read_text())
@@ -422,6 +452,7 @@ def claude_sessions():
         alive += 1
         with_status += "status" in d
         sid = d.get("sessionId")
+        live_ids.add(sid)
         tpath = claude_transcript(sid) if sid else None
         if not tpath:
             continue  # session without any exchange, nothing to show
@@ -453,6 +484,38 @@ def claude_sessions():
             "instance": claude_instance(pid)[0],
             "cost": claude_cost(sid, tpath),
             "memory": process_memory(pid),
+        })
+    # Sessions the app has put to sleep: status from the transcript, opening wakes them up.
+    for d, (label, bundle) in claude_app_sessions(now - CLAUDE_ACTIVE_HOURS * 3600 * 1000):
+        sid = d["cliSessionId"]
+        tpath = claude_transcript(sid) if sid not in live_ids else None
+        if not tpath:
+            continue
+        live_ids.add(sid)
+        raw_message = (_parse_cache.get(tpath, parse_claude_transcript) or {}).get("message") or ""
+        if d.get("interruptedAwaitingPerson") or asks_question(raw_message):
+            state, detail = "waiting", "question"
+        else:
+            state, detail = "done", None
+        cwd = d.get("cwd") or ""
+        host_id = d.get("sessionId") or ""
+        out.append({
+            "id": sid,
+            "name": d.get("title") or os.path.basename(cwd) or "session",
+            "project": os.path.basename(cwd.rstrip("/")) or "~",
+            "cwd": cwd,
+            "state": state,
+            "detail": detail,
+            "message": clean_text(raw_message),
+            "time": d.get("lastActivityAt"),
+            "source": "desktop",
+            "url": "claude://code/continue?session=" + host_id if CLAUDE_DESKTOP_ID.match(host_id) else None,
+            "pid": None,
+            "bundle": bundle,
+            "instance": label,
+            "cost": claude_cost(sid, tpath),
+            "memory": 0,
+            "asleep": True,
         })
     for x in out:
         x["stale"] = x["state"] in ("done", "aborted") and now - (x["time"] or now) > STALE_AFTER
@@ -874,6 +937,15 @@ def local_changes():
 
 
 _local = Poller(local_changes, 60)
+_local_lock = threading.Lock()
+
+
+def start_local_checker():
+    """Starts the git checker once. Requests arrive in parallel (the kiosk and a browser right after a
+    restart), and two of them starting the same thread at once killed it for good."""
+    with _local_lock:
+        if not _local.is_alive() and _local.ident is None:
+            _local.start()
 
 
 def pr_groups():
@@ -947,8 +1019,8 @@ def state():
     if dirs:
         _session_dirs.clear()
         _session_dirs.update(dirs)
-        if not DEMO and not _local.is_alive():
-            _local.start()  # only now do we know which repositories to check
+        if not DEMO:
+            start_local_checker()  # only now do we know which repositories to check
     cal, cal_err = safe(calendar, {"events": []})
     data = u.get("data") or {}
     return {
@@ -976,7 +1048,7 @@ def open_session(tool, sid):
     cmd = ["/usr/bin/open"]
     if tool == "claude":
         # Both Claude instances register claude://, so name the right one explicitly.
-        cmd += ["-b", claude_instance(session["pid"])[1]]
+        cmd += ["-b", session.get("bundle") or claude_instance(session["pid"])[1]]
     subprocess.run(cmd + [session["url"]], check=False, timeout=5)
     return True
 

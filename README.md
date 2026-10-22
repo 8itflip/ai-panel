@@ -12,8 +12,9 @@ open pull requests with CI status, and service status.
 
 ## Features
 
-- **Sessions in two columns (Claude, Codex)**: waiting for you, working, done. Sessions that wait for
-  you are highlighted and counted on the left. Click a session to open it in the app.
+- **Sessions in two columns (Claude, Codex)**: waiting for you, working, done, from the last 24 hours,
+  including Claude sessions the app has put to sleep. Sessions that wait for you are highlighted and
+  counted on the left. Click a session to open it in the app.
 - **Usage limits**: how much is left of the 5-hour and weekly limits, with reset time, a forecast when the current pace would
   run out before the reset, and a banner when a limit is exhausted.
 - **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
