@@ -23,9 +23,13 @@ więc dla niego aktywne = ruch w ciągu ostatnich 24 h (`CODEX_ACTIVE_HOURS` w `
 ## Uruchomienie
 
 ```bash
-./install.sh     # usługi launchd: serwer :7319 + helper kalendarza (start przy logowaniu)
-./kiosk.sh       # Chrome w trybie kiosku na podłużnym ekranie
+./install.sh     # usługi launchd: serwer :7319, helper kalendarza i autostart kiosku
+./kiosk.sh       # ręczne otwarcie panelu w Chrome (kiosk na podłużnym ekranie)
 ./uninstall.sh   # usuwa usługi
 ```
+
+Kiosk startuje sam: usługa `local.ai-panel.kiosk` co 20 s sprawdza, czy podłączony jest ekran
+o proporcjach > 2:1. Jeśli tak, otwiera na nim panel w osobnym profilu Chrome; po odłączeniu ekranu
+zamyka to okno, żeby nie zostało na pełnym ekranie głównego monitora.
 
 Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.
