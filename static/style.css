@@ -185,6 +185,10 @@ h2 {
 .s .lbl { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .s .when { font-size: 0.8rem; color: var(--faint); margin-top: 0.1rem; }
 
+.s[data-id] { cursor: pointer; transition: background 0.15s, transform 0.1s; }
+.s[data-id]:hover { background: var(--line); }
+.s[data-id]:active, .s.opening { transform: scale(0.99); }
+.s.opening { background: var(--work-bg); }
 .s.waiting { background: var(--wait-bg); }
 .s.waiting::before {
   content: ""; position: absolute; left: 0; top: 0.45rem; bottom: 0.45rem; width: 0.28rem;

@@ -6,8 +6,10 @@ oraz API OpenUsage na localhost. Nic nie wysyła na zewnątrz.
 """
 import json
 import os
+import plistlib
 import re
 import sqlite3
+import subprocess
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -34,6 +36,13 @@ PLAN_PRICES = {
     "claude": {"pro": 20, "max": 100, "max 5x": 100, "max 20x": 200, "team": 30},
     "codex": {"plus": 20, "pro": 200, "business": 30, "team": 30},
 }
+
+# Linki otwierające sesję w aplikacji (sprawdzone na Claude 2.1 i ChatGPT/Codex).
+CLAUDE_DESKTOP_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
+CLAUDE_BUNDLE = "com.anthropic.claudefordesktop"
+# Druga instancja Claude z Parall ma własne sesje; jej proces działa z „…/Application Support/Parall/<Nazwa>/claude-code/…”.
+PARALL_EXE = re.compile(r"/Application Support/Parall/([^/]+)/claude-code/")
+UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 STATIC_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
 
@@ -116,6 +125,35 @@ _transcript_paths = {}
 
 # ---------- Claude Code ----------
 
+def claude_url(d):
+    host_id, sid = d.get("hostSessionId") or "", d.get("sessionId") or ""
+    if CLAUDE_DESKTOP_ID.match(host_id):
+        return "claude://code/continue?session=" + host_id
+    if UUID.match(sid):
+        return "claude://resume?session=" + sid  # sesja z terminala: aplikacja ją importuje
+    return None
+
+
+def claude_bundle(pid):
+    """Bundle ID aplikacji, do której należy sesja (główny Claude albo instancja z Parall)."""
+    try:
+        exe = subprocess.run(["/bin/ps", "-o", "comm=", "-p", str(pid)],
+                             capture_output=True, text=True, timeout=2).stdout
+    except (OSError, subprocess.SubprocessError):
+        return CLAUDE_BUNDLE
+    m = PARALL_EXE.search(exe)
+    if not m:
+        return CLAUDE_BUNDLE
+    for base in (Path("/Applications"), HOME / "Applications"):
+        info = base / (m.group(1) + ".app") / "Contents" / "Info.plist"
+        try:
+            with open(info, "rb") as f:
+                return plistlib.load(f).get("CFBundleIdentifier") or CLAUDE_BUNDLE
+        except (OSError, plistlib.InvalidFileException):
+            continue
+    return CLAUDE_BUNDLE
+
+
 def pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -196,6 +234,8 @@ def claude_sessions():
             "message": clean_text(raw_message),
             "time": d.get("statusUpdatedAt") or d.get("updatedAt") or d.get("startedAt"),
             "source": "desktop" if d.get("entrypoint") == "claude-desktop" else "cli",
+            "url": claude_url(d),
+            "pid": pid,
         })
     return out
 
@@ -270,6 +310,7 @@ def codex_sessions():
             "message": clean_text(raw_message),
             "time": parsed.get("at") or recent,
             "source": "codex",
+            "url": "codex://threads/" + tid if UUID.match(tid or "") else None,
         })
     return out
 
@@ -361,6 +402,22 @@ def state():
     }
 
 
+def open_session(tool, sid):
+    """Otwiera sesję w aplikacji. URL bierzemy z naszych danych, nigdy od klienta."""
+    sessions = {"claude": claude_sessions, "codex": codex_sessions}.get(tool)
+    if not sessions:
+        return False
+    session = next((s for s in sessions() if s["id"] == sid and s.get("url")), None)
+    if not session:
+        return False
+    cmd = ["/usr/bin/open"]
+    if tool == "claude":
+        # Obie instancje Claude rejestrują claude://, więc wskazujemy właściwą wprost.
+        cmd += ["-b", claude_bundle(session["pid"])]
+    subprocess.run(cmd + [session["url"]], check=False, timeout=5)
+    return True
+
+
 class Handler(BaseHTTPRequestHandler):
     def send(self, code, body, ctype):
         self.send_response(code)
@@ -370,10 +427,32 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self):
+    def host_ok(self):
         # Ochrona przed DNS rebinding: obca strona nie może czytać API pod własną domeną.
-        if self.headers.get("Host") not in ALLOWED_HOSTS:
-            return self.send(421, b"misdirected request", "text/plain")
+        if self.headers.get("Host") in ALLOWED_HOSTS:
+            return True
+        self.send(421, b"misdirected request", "text/plain")
+        return False
+
+    def do_POST(self):
+        if not self.host_ok():
+            return
+        # Tylko nasza własna strona (Origin) i tylko JSON — inna strona nie wywoła tego przez CSRF.
+        origin = self.headers.get("Origin", "")
+        if origin.split("://", 1)[-1] not in ALLOWED_HOSTS or self.headers.get("Content-Type") != "application/json":
+            return self.send(403, b"forbidden", "text/plain")
+        if self.path != "/api/open":
+            return self.send(404, b"not found", "text/plain")
+        try:
+            body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 4096)))
+            ok = open_session(str(body.get("tool")), str(body.get("id")))
+        except (ValueError, AttributeError):
+            return self.send(400, b"bad request", "text/plain")
+        self.send(200 if ok else 404, json.dumps({"ok": ok}).encode(), "application/json")
+
+    def do_GET(self):
+        if not self.host_ok():
+            return
         path = self.path.split("?", 1)[0]
         if path == "/api/state":
             return self.send(200, json.dumps(state(), ensure_ascii=False).encode(), "application/json")
