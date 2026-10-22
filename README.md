@@ -26,7 +26,9 @@ open pull requests with CI status, and service status.
 - **Pull requests**: your open PRs and PRs waiting for your review, with CI status, from GitHub and
   GitLab, optionally split into groups.
 - **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
-- **Kiosk mode**: opens full screen on a chosen monitor at login and closes when it is unplugged.
+- **Kiosk window**: a small native WebKit window (about 180 MB instead of a full browser) that covers
+  a chosen monitor, including its menu bar, appears when the monitor is connected and goes away when
+  it is unplugged.
 - Light and dark theme; scales to any resolution (designed for 1920×1080 and 1920×720 bar displays).
 - Follows the system language (English and Polish so far; add a dictionary in `static/i18n.js` for more).
   Force one with `?lang=pl` in the URL or `PANEL_LANG="pl"` in `kiosk.conf`.
@@ -37,7 +39,6 @@ open pull requests with CI status, and service status.
 - Python 3.9+ (the system `python3` is fine; no dependencies)
 - [Claude Code](https://claude.com/claude-code) and/or Codex (app or CLI)
 - [OpenUsage](https://github.com/robinebers/openusage) running, for limits, costs and pricing
-- Google Chrome for kiosk mode
 - Optional: [GitHub CLI](https://cli.github.com) (`gh auth login`) for pull requests
 - Xcode Command Line Tools (`swiftc`) to build the calendar helper
 
@@ -50,10 +51,10 @@ cd ai-panel
 ```
 
 This builds the calendar helper and installs three launchd agents: the server on
-`http://127.0.0.1:7319`, the calendar exporter, and the kiosk watcher. macOS asks once for
+`http://127.0.0.1:7319`, the calendar exporter, and the kiosk window. macOS asks once for
 Calendar access.
 
-To pick the monitor for kiosk mode, create `kiosk.conf` with the display name from
+To pick the monitor for the kiosk window, create `kiosk.conf` with the display name from
 System Settings → Displays:
 
 ```bash
