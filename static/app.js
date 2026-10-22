@@ -42,11 +42,11 @@ function until(ms) {
 }
 
 function chatCost(c) {
-  // Orientacyjny koszt czatu po cenach API; „+” = część odpowiedzi bez znanej ceny modelu.
+  // Koszt czatu po cenach API; „+” = część odpowiedzi bez znanej ceny modelu.
   if (!c) return "";
   const x = c.usd, digits = x < 10 ? 2 : x < 100 ? 1 : 0;
   const n = x.toLocaleString("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits });
-  return `≈ $${n}${c.partial ? "+" : ""}`;
+  return `$${n}${c.partial ? "+" : ""}`;
 }
 
 function usd(x) {
