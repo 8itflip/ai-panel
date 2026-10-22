@@ -365,7 +365,7 @@ def claude_sessions():
         elif status == "busy":
             state, detail = "working", None
         elif asks_question(raw_message):
-            state, detail = "waiting", "pytanie"
+            state, detail = "waiting", "question"
         else:
             state, detail = "done", None
         cwd = d.get("cwd") or ""
@@ -457,7 +457,7 @@ def codex_sessions():
         raw_message = parsed.get("message") or ""
         detail = None
         if state == "done" and asks_question(raw_message):
-            state, detail = "waiting", "pytanie"
+            state, detail = "waiting", "question"
         out.append({
             "id": tid,
             "name": title or "wątek",
@@ -536,7 +536,7 @@ def usage():
         save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
     except Exception as exc:  # OpenUsage wyłączony / zmiana API
-        _usage_cache.update(at=time.time(), error="OpenUsage niedostępny (%s)" % exc.__class__.__name__)
+        _usage_cache.update(at=time.time(), error="openusage")  # kod — tekst tłumaczy strona
     return _usage_cache
 
 
@@ -667,7 +667,7 @@ def service_status():
             out[tool] = {"indicator": st.get("indicator") or "none", "description": st.get("description"),
                          "incident": open_incidents[0] if open_incidents else None}
         except Exception:
-            out[tool] = {"indicator": "unknown", "description": "Brak danych o statusie"}
+            out[tool] = {"indicator": "unknown", "description": None}
     return out
 
 
