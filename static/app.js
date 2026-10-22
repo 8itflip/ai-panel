@@ -1,6 +1,6 @@
 "use strict";
 
-const POLL_MS = 3000;
+const POLL_MS = 10000;
 const MEETING_LEAD_MIN = 10; // minutes before a meeting to show the "In X min · Join" bar
 const ORDER = { waiting: 0, working: 1, done: 2, aborted: 3 };
 const ICON = {
@@ -73,9 +73,11 @@ function tokensLabel(n) {
 
 function fillTimes(root = document) {
   // Filled in while rendering: empty fields would change height later and break the list fitting.
-  root.querySelectorAll("[data-ago]").forEach((el) => { el.textContent = ago(+el.dataset.ago); });
+  // Only touch text that changed: every write invalidates layout, and this runs every second.
+  const set = (el, text) => { if (el.textContent !== text) el.textContent = text; };
+  root.querySelectorAll("[data-ago]").forEach((el) => set(el, ago(+el.dataset.ago)));
   root.querySelectorAll("[data-until]").forEach((el) => {
-    el.textContent = t(el.dataset.fmt || "reset", { until: until(+el.dataset.until) });
+    set(el, t(el.dataset.fmt || "reset", { until: until(+el.dataset.until) }));
   });
 }
 
@@ -146,6 +148,10 @@ function renderStatus(col, st) {
 }
 
 function renderUsage(col, usage, error) {
+  // Rebuilding the header every poll forces a layout of the whole column; skip it when unchanged.
+  const sig = JSON.stringify([usage, error]), key = `usage:${col.dataset.tool}`;
+  if (sigs[key] === sig) return;
+  sigs[key] = sig;
   $(".plan", col).textContent = usage?.plan || "";
   const cost = $(".cost", col);
   if (usage && usage.month != null) {
@@ -302,6 +308,10 @@ function renderMeeting(events) {
 function renderCalendar(cal) {
   const ul = $("#events");
   const now = Date.now();
+  // Relative times ("in 5 min") change once a minute, so rebuild at most that often.
+  const sig = JSON.stringify([cal, Math.floor(now / 60000), ul.clientHeight]);
+  if (sigs.calendar === sig) return;
+  sigs.calendar = sig;
   const events = (cal.events || []).filter((e) => !e.allDay && e.end > now);
   const featured = renderMeeting(events);
   const rest = events.filter((e) => e !== featured);
@@ -514,6 +524,22 @@ document.addEventListener("click", async (ev) => {
     await fetch("/api/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   } catch (e) { /* server unreachable, do nothing */ }
 });
+
+/* ---------- hover inside the kiosk window ---------- */
+
+// WebKit ignores mouse movement while its app is inactive, and the kiosk app always is, so :hover
+// only caught up on the next layout. The kiosk window passes the cursor position here instead and
+// the elements under the cursor get a "hover" class that mirrors :hover in the stylesheet.
+let hoverChain = [];
+window.__pointer = (x, y) => {
+  const top = x < 0 ? null : document.elementFromPoint(x, y);
+  if (top === hoverChain[0]) return;
+  const chain = [];
+  for (let el = top; el && el !== document.body; el = el.parentElement) chain.push(el);
+  for (const el of hoverChain) if (!chain.includes(el)) el.classList.remove("hover");
+  for (const el of chain) el.classList.add("hover");
+  hoverChain = chain;
+};
 
 /* ---------- theme ---------- */
 

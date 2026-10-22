@@ -189,7 +189,7 @@ h2 {
 .s .usd:not(:empty)::after { content: " · "; color: var(--faint); font-weight: 400; }
 
 .s[data-id] { cursor: pointer; transition: background 0.15s, transform 0.1s; }
-.s[data-id]:hover { background: var(--line); }
+.s[data-id]:hover, .s[data-id].hover { background: var(--line); }
 .s[data-id]:active, .s.opening { transform: scale(0.99); }
 .s.opening { background: var(--work-bg); }
 .s.waiting { background: var(--wait-bg); }
@@ -248,7 +248,7 @@ h2 {
 .cal { flex: 1 1 0; min-height: 11rem; }
 .ev.link { cursor: pointer; }
 .ev.link .t::after { content: " ↗"; color: var(--faint); font-weight: 400; }
-.ev.link:hover { background: var(--line); }
+.ev.link:hover, .ev.link.hover { background: var(--line); }
 
 .prs { flex: 0 1 auto; max-height: 38%; min-height: 0; display: flex; flex-direction: column; }
 #pr-count { color: var(--faint); margin-left: 0.2rem; }
@@ -257,7 +257,7 @@ h2 {
   display: grid; grid-template-columns: 0.7rem 1fr; column-gap: 0.7rem; align-items: center;
   padding: 0.35rem 0.5rem 0.35rem 0.2rem; border-radius: 0.6rem; cursor: pointer;
 }
-.pr:hover, .pr.opening { background: var(--line); }
+.pr:hover, .pr.hover, .pr.opening { background: var(--line); }
 .pr > div { min-width: 0; }
 .pr .t { font-size: 0.95rem; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pr .m { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -308,7 +308,7 @@ h2 {
   border-radius: 0.5rem; cursor: pointer;
 }
 .pr-group:first-child { margin-top: 0; }
-.pr-group:hover { background: var(--line); }
+.pr-group:hover, .pr-group.hover { background: var(--line); }
 .pr-group .chev { width: 0.9rem; flex: none; color: var(--faint); font-size: 0.7rem; text-align: center; transition: transform 0.15s; }
 .pr-group .chev::before { content: "▶"; }
 .pr-group.open .chev { transform: rotate(90deg); }
@@ -335,7 +335,7 @@ h2 {
 .spend.warn, .spend.warn b { color: var(--warn); }
 
 .s.stale { opacity: 0.45; }
-.s.stale:hover { opacity: 0.8; }
+.s.stale:hover, .s.stale.hover { opacity: 0.8; }
 .col-foot { padding: 0 1.3rem 0.8rem; margin-top: -0.3rem; font-size: 0.8rem; color: var(--faint); }
 .col-foot:empty { display: none; }
 
