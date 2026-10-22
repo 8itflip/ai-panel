@@ -394,12 +394,23 @@ def parse_codex_rollout(path):
     return {"state": state, "at": at, "message": message}
 
 
+def codex_connect(db):
+    try:
+        conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2)
+        conn.execute("select 1 from threads limit 1")
+        return conn
+    except sqlite3.OperationalError:
+        # Po zamknięciu bazy przez Codex znikają pliki -wal/-shm, a połączenie „ro” nie umie ich
+        # utworzyć. Bez -wal cała treść jest w głównym pliku, więc immutable czyta aktualny stan.
+        return sqlite3.connect("file:%s?mode=ro&immutable=1" % db, uri=True, timeout=2)
+
+
 def codex_sessions():
     db = codex_db()
     if not db:
         return []
     cutoff = now_ms() - CODEX_ACTIVE_HOURS * 3600 * 1000
-    conn = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2)
+    conn = codex_connect(db)
     try:
         rows = conn.execute(
             """
@@ -501,10 +512,19 @@ def calendar():
 
 # ---------- HTTP ----------
 
+_last_good = {}
+GRACE = 120  # s — tyle pokazujemy ostatnie dobre dane, zanim zgłosimy błąd
+
+
 def safe(fn, fallback):
     try:
-        return fn(), None
+        value = fn()
+        _last_good[fn.__name__] = (time.time(), value)
+        return value, None
     except Exception as exc:
+        at, value = _last_good.get(fn.__name__, (0, fallback))
+        if time.time() - at < GRACE:
+            return value, None  # chwilowy błąd (np. baza w trakcie zapisu) — bez mrugania
         return fallback, "%s: %s" % (exc.__class__.__name__, exc)
 
 
