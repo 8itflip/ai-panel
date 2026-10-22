@@ -26,6 +26,8 @@ open pull requests with CI status, and service status.
 - **Pull requests**: your open PRs and PRs waiting for your review, with CI status, from GitHub and
   GitLab, optionally split into groups.
 - **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
+- **Format checks**: Claude Code and Codex keep sessions in undocumented formats. If an update
+  changes them, the column shows "data format changed" with the detail, instead of going blank.
 - **Kiosk window**: a small native WebKit window (about 180 MB instead of a full browser) that covers
   a chosen monitor, including its menu bar, appears when the monitor is connected and goes away when
   it is unplugged.

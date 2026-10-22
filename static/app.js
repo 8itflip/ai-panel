@@ -216,10 +216,19 @@ function updateCosts(col, sessions) {
   });
 }
 
-function renderTool(key, data, usageError, status) {
+function renderHealth(col, key, health) {
+  // The data format of Claude Code, Codex or OpenUsage changed: warn instead of quietly showing nothing.
+  const detail = health?.[key] || health?.[`openusage:${key}`];
+  const el = $(".health", col);
+  el.textContent = detail ? `⚠ ${t("health.chip")}` : "";
+  el.title = detail ? `${detail}. ${t("health.hint")}` : "";
+}
+
+function renderTool(key, data, usageError, status, health) {
   const col = $(`.col[data-tool="${key}"]`);
   renderUsage(col, data.usage, usageError);
   renderStatus(col, status);
+  renderHealth(col, key, health);
   const sessions = [...data.sessions].sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || (b.time - a.time));
   const stale = sessions.filter((s) => s.stale);
   $(".col-foot", col).textContent = stale.length
@@ -460,8 +469,8 @@ function renderLocal(local) {
 function render() {
   if (!last) return;
   const st = last.status || {};
-  renderTool("claude", last.claude, last.usageError, st.claude);
-  renderTool("codex", last.codex, last.usageError, st.codex);
+  renderTool("claude", last.claude, last.usageError, st.claude, last.health);
+  renderTool("codex", last.codex, last.usageError, st.codex, last.health);
   renderSummary([...last.claude.sessions, ...last.codex.sessions], last.claude.usage, last.codex.usage);
   renderLocal(last.local);
   renderPRs(last.prs); // PRs and changes first: the calendar fits into whatever space is left

@@ -152,6 +152,28 @@ _parse_cache = FileCache()
 _transcript_paths = {}
 
 
+# ---------- data format checks ----------
+
+# Claude Code and Codex store sessions in undocumented formats that can change with any update.
+# When the data stops making sense, say so in the column header instead of quietly showing nothing.
+_health = {}  # source -> human-readable detail of what no longer matches
+
+CODEX_COLUMNS = {"id", "title", "name", "cwd", "rollout_path", "archived", "source",
+                 "updated_at", "updated_at_ms", "recency_at_ms", "git_branch"}
+
+
+def format_issue(source, detail):
+    _health[source] = detail
+
+
+def claude_running():
+    """True if any Claude Code process runs (desktop sessions and the CLI are both named claude)."""
+    try:
+        return subprocess.run(["/usr/bin/pgrep", "-x", "claude"], capture_output=True, timeout=3).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 # ---------- per-chat cost ----------
 
 class Pricing:
@@ -387,6 +409,8 @@ def claude_cost(sid, tpath):
 def claude_sessions():
     out = []
     now = now_ms()
+    alive = with_status = 0
+    _health.pop("claude", None)
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             d = json.loads(f.read_text())
@@ -395,6 +419,8 @@ def claude_sessions():
         pid = d.get("pid")
         if not isinstance(pid, int) or not pid_alive(pid) or d.get("spare"):
             continue
+        alive += 1
+        with_status += "status" in d
         sid = d.get("sessionId")
         tpath = claude_transcript(sid) if sid else None
         if not tpath:
@@ -430,6 +456,12 @@ def claude_sessions():
         })
     for x in out:
         x["stale"] = x["state"] in ("done", "aborted") and now - (x["time"] or now) > STALE_AFTER
+    if alive and with_status < alive / 2:
+        format_issue("claude", "session files in ~/.claude/sessions have no status field")
+    elif alive and not out:
+        format_issue("claude", "running sessions have no transcript in ~/.claude/projects")
+    elif not alive and claude_running():
+        format_issue("claude", "Claude Code is running but ~/.claude/sessions has no live session files")
     return out
 
 
@@ -479,12 +511,20 @@ def codex_connect(db):
 
 
 def codex_sessions():
+    _health.pop("codex", None)
     db = codex_db()
     if not db:
+        if CODEX_HOME.is_dir():
+            format_issue("codex", "no state_*.sqlite database in ~/.codex")
         return []
     cutoff = now_ms() - CODEX_ACTIVE_HOURS * 3600 * 1000
     conn = codex_connect(db)
     try:
+        columns = {r[1] for r in conn.execute("pragma table_info(threads)")}
+        missing = sorted(CODEX_COLUMNS - columns)
+        if missing:
+            format_issue("codex", "the threads table in %s has no column %s" % (db.name, ", ".join(missing)))
+            return []
         rows = conn.execute(
             """
             select id, coalesce(nullif(name, ''), title), cwd, rollout_path, git_branch,
@@ -498,8 +538,10 @@ def codex_sessions():
     finally:
         conn.close()
     out = []
+    known_events = 0
     for tid, title, cwd, rollout, branch, recent in rows:
         parsed = _parse_cache.get(rollout, parse_codex_rollout) or {}
+        known_events += parsed.get("state") is not None
         state = parsed.get("state") or "done"
         raw_message = parsed.get("message") or ""
         detail = None
@@ -518,6 +560,8 @@ def codex_sessions():
             "url": "codex://threads/" + tid if UUID.match(tid or "") else None,
             "cost": cost_of([tally(rollout, consume_codex, (b'"token_usage_record"', b'"turn_context"'))]),
         })
+    if len(rows) >= 3 and not known_events:
+        format_issue("codex", "session logs (rollout-*.jsonl) contain no task_started/task_complete events")
     return out
 
 
@@ -585,6 +629,10 @@ def usage():
             pid = p.get("providerId")
             if pid in ("claude", "codex"):
                 data[pid] = parse_provider(p, pid)
+                if not data[pid]["session"] and not data[pid]["weekly"]:
+                    format_issue("openusage:" + pid, "OpenUsage returned no Session/Weekly limits")
+                else:
+                    _health.pop("openusage:" + pid, None)
                 for kind in ("session", "weekly"):
                     bar = data[pid][kind]
                     if bar:
@@ -911,6 +959,7 @@ def state():
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),
         "prs": pr_groups(),
+        "health": dict(_health),
         "local": _local.snapshot(),
         "status": _status.snapshot()["data"] or {},
     }

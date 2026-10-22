@@ -46,6 +46,7 @@ const STRINGS = {
     "svc.ok": "All systems operational", "svc.minor": "Minor issues", "svc.major": "Major outage",
     "svc.critical": "Outage", "svc.maintenance": "Maintenance", "svc.unknown": "Status unavailable",
     "offline": "server unreachable",
+    "health.chip": "data format changed", "health.hint": "The panel may need an update.",
     "num.k": "{n}K", "num.m": "{n}M", "num.b": "{n}B",
   },
   pl: {
@@ -91,6 +92,7 @@ const STRINGS = {
     "svc.ok": "Działa normalnie", "svc.minor": "Drobne problemy", "svc.major": "Poważna awaria",
     "svc.critical": "Awaria", "svc.maintenance": "Prace serwisowe", "svc.unknown": "Brak danych o statusie",
     "offline": "brak połączenia z serwerem",
+    "health.chip": "zmienił się format danych", "health.hint": "Panel może wymagać aktualizacji.",
     "num.k": "{n} tys.", "num.m": "{n} mln", "num.b": "{n} mld",
   },
 };
