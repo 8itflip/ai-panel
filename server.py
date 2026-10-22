@@ -508,6 +508,11 @@ def safe(fn, fallback):
         return fallback, "%s: %s" % (exc.__class__.__name__, exc)
 
 
+def static_version():
+    """Zmienia się przy każdej zmianie plików strony — kiosk wtedy sam się przeładowuje."""
+    return max(int(f.stat().st_mtime) for f in STATIC.iterdir() if f.suffix in STATIC_TYPES)
+
+
 def state():
     u = usage()
     claude, claude_err = safe(claude_sessions, [])
@@ -519,6 +524,7 @@ def state():
         "claude": {"usage": data.get("claude"), "sessions": claude, "error": claude_err},
         "codex": {"usage": data.get("codex"), "sessions": codex, "error": codex_err},
         "usageError": u.get("error"),
+        "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),
     }
 
