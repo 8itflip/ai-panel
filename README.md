@@ -8,7 +8,7 @@ open pull requests with CI status, and service status.
 
 ![AI Panel with demo data](docs/screenshot.png)
 
-<sub>Screenshot uses made-up demo data (`AI_PANEL_DEMO=1`). The interface is in Polish.</sub>
+<sub>Screenshot uses made-up demo data (`AI_PANEL_DEMO=1`).</sub>
 
 ## Features
 
@@ -24,6 +24,8 @@ open pull requests with CI status, and service status.
 - **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
 - **Kiosk mode**: opens full screen on a chosen monitor at login and closes when it is unplugged.
 - Light and dark theme; scales to any resolution (designed for 1920×1080 and 1920×720 bar displays).
+- Follows the system language (English and Polish so far; add a dictionary in `static/i18n.js` for more).
+  Force one with `?lang=pl` in the URL or `PANEL_LANG="pl"` in `kiosk.conf`.
 
 ## Requirements
 
@@ -55,6 +57,7 @@ SCREEN_NAME="M14"
 ```
 
 Without it, the first display wider than 2:1 is used. The main display is never used.
+Add `PANEL_LANG="en"` (or `"pl"`) to force the interface language.
 
 `./uninstall.sh` removes the agents. Logs are in `~/Library/Logs/ai-panel/`.
 
