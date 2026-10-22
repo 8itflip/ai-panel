@@ -1,4 +1,4 @@
-/* Projekt pod ekran 1920×720; wszystko w rem, więc skaluje się do okna. */
+/* Sized in rem throughout, so it scales to any window (designed for 1920×1080 and 1920×720). */
 :root {
   --bg: #efede7;
   --card: #fbfaf7;
@@ -58,7 +58,7 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-/* 1920 px szerokości → ok. 18 px bazowo; na 720 px wysokości ogranicza wysokość. */
+/* 1920 px wide gives about 18 px; on a 720 px tall screen the height is the limit. */
 html { font-size: min(calc(100vw / 107), calc(100vh / 45)); }
 body {
   background: var(--bg);
@@ -87,7 +87,7 @@ body {
 ul { list-style: none; }
 .num, .time, .tile b, .pct, .when { font-variant-numeric: tabular-nums; }
 
-/* ---------- lewa kolumna ---------- */
+/* ---------- left column ---------- */
 .side { display: flex; flex-direction: column; padding: 1.4rem 1.4rem 1rem; gap: 1.2rem; }
 .time { font-size: 5.6rem; font-weight: 650; letter-spacing: -0.03em; line-height: 0.95; }
 .date { font-size: 1.15rem; color: var(--muted); margin-top: 0.45rem; }
@@ -138,7 +138,7 @@ h2 {
 }
 #conn.bad { color: var(--warn); }
 
-/* ---------- kolumny narzędzi ---------- */
+/* ---------- tool columns ---------- */
 .col { display: flex; flex-direction: column; }
 .col-head { padding: 1.1rem 1.3rem 0.9rem; border-bottom: 1px solid var(--line); }
 .col-title { display: flex; align-items: baseline; gap: 0.6rem; }
@@ -224,7 +224,7 @@ h2 {
   .dot::after, .spin { animation: none; }
 }
 
-/* ---------- dziś, spotkanie, PR-y ---------- */
+/* ---------- today, meeting, pull requests ---------- */
 .side { gap: 1rem; }
 .today { font-size: 0.95rem; color: var(--muted); margin-top: -0.3rem; }
 .today span { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; font-weight: 600; margin-right: 0.3rem; }
@@ -274,7 +274,7 @@ h2 {
 .tag.good { color: var(--done); border-color: var(--done); }
 .prs .more, .prs .empty { font-size: 0.85rem; }
 
-/* ---------- nagłówek kolumny: status, trend, prognoza, wyczerpany limit ---------- */
+/* ---------- column header: status, trend, forecast, exhausted limit ---------- */
 .svc { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; min-width: 0; }
 .svc i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--faint); flex: none; }
 .svc.ok i { background: var(--done); }
@@ -327,7 +327,7 @@ h2 {
 .prs .empty.warn { color: var(--warn); font-size: 0.8rem; }
 .meter .pct small { font-size: 0.75rem; font-weight: 500; color: var(--muted); }
 
-/* ---------- wydatki, stare sesje, lokalne zmiany ---------- */
+/* ---------- spend, idle sessions, local changes ---------- */
 .col-title { flex-wrap: wrap; row-gap: 0.1rem; }
 .spend { flex-basis: 100%; text-align: right; font-size: 0.82rem; color: var(--muted); margin-top: -0.1rem; }
 .spend:empty { display: none; }
@@ -351,7 +351,7 @@ h2 {
 .lr .m { color: var(--faint); font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lr .n { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
 
-/* Niskie ekrany (np. podłużny 1920×720): kalendarz ustępuje miejsca nagłówkom grup PR-ów. */
+/* Short screens (e.g. a 1920×720 bar display): the calendar gives way to the PR group headers. */
 @media (max-height: 820px) {
   .side { gap: 0.7rem; }
   .cal { min-height: 5rem; }

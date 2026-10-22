@@ -1,4 +1,4 @@
-"""Fikcyjne dane do zrzutów ekranu i testów wyglądu: AI_PANEL_DEMO=1 python3 server.py"""
+"""Made-up data for screenshots and layout checks: AI_PANEL_DEMO=1 python3 server.py"""
 import time
 
 MIN = 60 * 1000

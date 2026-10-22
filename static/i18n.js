@@ -1,6 +1,6 @@
 "use strict";
-// Teksty interfejsu. Język: ?lang=xx w adresie, inaczej pierwszy obsługiwany z ustawień systemu
-// (Chrome bierze je z macOS), a w ostateczności angielski. Nowy język = nowy słownik poniżej.
+// Interface strings. Language: ?lang=xx in the URL, otherwise the first supported one from the system
+// settings, falling back to English. To add a language, add a dictionary below.
 
 const STRINGS = {
   en: {
@@ -105,7 +105,7 @@ const LANG = (() => {
   }
   return "en";
 })();
-// Formaty dat i liczb wg pełnego ustawienia systemu (np. en-PL: 24 h, spacja w tysiącach), o ile pasuje do języka.
+// Date and number formats follow the full system locale (e.g. en-PL: 24-hour clock) when it matches the language.
 const LOCALE = (navigator.languages || []).find((l) => l.toLowerCase().startsWith(LANG)) || LANG;
 const _plural = new Intl.PluralRules(LOCALE);
 

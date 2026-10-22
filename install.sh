@@ -1,8 +1,8 @@
 #!/bin/bash
-# Instaluje AI Panel jako usługi launchd (start przy logowaniu, restart po awarii):
-#   local.ai-panel.server    — serwer na http://127.0.0.1:7319
-#   local.ai-panel.calendar  — eksport wydarzeń z Kalendarza
-#   local.ai-panel.kiosk     — co 20 s pilnuje kiosku na podłużnym ekranie (kiosk.sh --auto)
+# Installs AI Panel as launchd agents (start at login, restart on failure):
+#   local.ai-panel.server    — the server on http://127.0.0.1:7319
+#   local.ai-panel.calendar  — the Calendar event exporter
+#   local.ai-panel.kiosk     — keeps the kiosk window on the panel display (kiosk.sh --auto, every 20 s)
 set -euo pipefail
 DIR="$(cd "$(dirname "$0")" && pwd)"
 AGENTS="$HOME/Library/LaunchAgents"
@@ -15,7 +15,7 @@ mkdir -p "$AGENTS" "$LOGS" "$CACHE"
 KEEP_ALIVE='<key>KeepAlive</key><true/>'
 EVERY_20S='<key>StartInterval</key><integer>20</integer>'
 
-agent() { # label, klucze plist uruchamiania, program args...
+agent() { # label, plist launch keys, program args...
   local label="$1" schedule="$2"; shift 2
   local plist="$AGENTS/$label.plist"
   {
@@ -51,4 +51,4 @@ agent local.ai-panel.kiosk "$EVERY_20S" /bin/bash "$DIR/kiosk.sh" --auto
 
 echo
 echo "Panel: http://127.0.0.1:7319"
-echo "Przy pierwszym uruchomieniu macOS zapyta o dostęp do Kalendarza — kliknij „Zezwól”."
+echo "On first run macOS asks for Calendar access. Click Allow."
