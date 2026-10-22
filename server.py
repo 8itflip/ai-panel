@@ -22,6 +22,7 @@ HOME = Path.home()
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 PORT = int(os.environ.get("AI_PANEL_PORT", "7319"))
+DEMO = os.environ.get("AI_PANEL_DEMO") == "1"  # fikcyjne dane (demo.py) do zrzutów ekranu
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 CLAUDE_SESSIONS = HOME / ".claude" / "sessions"
@@ -791,7 +792,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, b"not found", "text/plain")
         try:
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 4096)))
-            ok = open_target(body)
+            ok = False if DEMO else open_target(body)
         except (ValueError, AttributeError):
             return self.send(400, b"bad request", "text/plain")
         self.send(200 if ok else 404, json.dumps({"ok": ok}).encode(), "application/json")
@@ -801,7 +802,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         path = self.path.split("?", 1)[0]
         if path == "/api/state":
-            return self.send(200, json.dumps(state(), ensure_ascii=False).encode(), "application/json")
+            data = __import__("demo").state() if DEMO else state()
+            return self.send(200, json.dumps(data, ensure_ascii=False).encode(), "application/json")
         name = "index.html" if path == "/" else path.lstrip("/")
         f = (STATIC / name).resolve()
         if STATIC in f.parents and f.is_file() and f.suffix in STATIC_TYPES:
@@ -814,6 +816,7 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print("AI Panel: http://127.0.0.1:%d" % PORT, flush=True)
-    _github.start()
-    _status.start()
+    if not DEMO:
+        _github.start()
+        _status.start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
