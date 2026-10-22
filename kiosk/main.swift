@@ -3,14 +3,16 @@
 //   ai-panel-kiosk [--config kiosk.conf] [--url http://127.0.0.1:7319/]
 //
 // kiosk.conf (shell style, optional):
-//   SCREEN_NAME="M14"   display name from System Settings → Displays; without it, the first display
-//                       wider than 2:1 is used. The main display is never used.
+//   SCREEN_NAME="M14"   display name from System Settings → Displays. It is used even when it becomes
+//                       the main display (e.g. the big monitor is unplugged), but never when it is the
+//                       only display. Without it, the first non-main display wider than 2:1 is used.
 //   PANEL_LANG="pl"     forces the interface language (default: system language)
 //
 // The window follows the display: it appears when the display is connected and goes away when it is
 // unplugged. It covers the whole display, including the menu bar area, and stays above other windows
-// on that display only. When another app opens a window there (a screenshot editor, say), the kiosk
-// steps behind it until that window is closed or moved away.
+// on that display only. When another app opens a window there (a screenshot editor, say), or the user
+// switches to an app with a window there, the kiosk steps behind it until that window is closed or
+// moved away. Windows that macOS moves there itself when a monitor is unplugged do not count.
 import AppKit
 import WebKit
 
@@ -118,6 +120,8 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var activity: NSObjectProtocol?
     var watch: Timer?
     var yielding = false
+    /// Windows macOS moved onto the panel display during a display change; they do not push the kiosk back.
+    var relocated = Set<Int>()
 
     static let topLevel = NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue + 1)
     /// Owners whose windows on the display are part of the system UI, not something to work in.
@@ -133,26 +137,40 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "AI Panel kiosk display")
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
-        screensChanged()
+        screensChanged()  // also remembers windows already on the display at start
         watch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.yieldIfNeeded() }
     }
 
-    /// The panel display, or nil. Never the main display (index 0), so the kiosk cannot take it over.
+    /// The panel display, or nil. Never the only display, so the kiosk cannot take over the computer.
+    /// A display named in kiosk.conf is used even when it becomes the main one, for example when the
+    /// big monitor is unplugged; otherwise the main display (index 0) is never picked.
     func panelScreen() -> NSScreen? {
-        let others = NSScreen.screens.dropFirst()
+        let screens = NSScreen.screens
+        guard screens.count > 1 else { return nil }
         if !config.screenName.isEmpty {
-            return others.first { $0.localizedName == config.screenName }
+            return screens.first { $0.localizedName == config.screenName }
         }
-        return others.first { $0.frame.width / $0.frame.height > 2 }
+        return screens.dropFirst().first { $0.frame.width / $0.frame.height > 2 }
+    }
+
+    /// Above the menu bar on a secondary display. On the main display the menu bar stays usable, so the
+    /// kiosk floats above ordinary windows but below it.
+    func topLevel(for screen: NSScreen) -> NSWindow.Level {
+        screen == NSScreen.screens.first ? .floating : Kiosk.topLevel
     }
 
     @objc func screensChanged() {
+        // macOS moves windows off an unplugged monitor a moment after the change; remember those.
+        for delay in [1.5, 4.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rememberRelocated() }
+        }
         guard let screen = panelScreen() else {
             window?.orderOut(nil)  // display unplugged: hide instead of falling back to another screen
             return
         }
         let win = window ?? makeWindow()
         win.setFrame(screen.frame, display: true)
+        if !yielding { win.level = topLevel(for: screen) }
         win.orderFrontRegardless()
     }
 
@@ -194,12 +212,26 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             win.orderBack(nil)
         } else if !foreign && yielding {
             yielding = false
-            win.level = Kiosk.topLevel
+            win.level = topLevel(for: screen)
             win.orderFrontRegardless()
         }
     }
 
+    func rememberRelocated() {
+        guard let screen = panelScreen() else { return }
+        relocated.formUnion(foreignWindows(on: screen).map { $0.number })
+    }
+
+    /// True when a window should be in front of the kiosk: one that appeared on the display since the
+    /// last display change, or any window there of the app the user is working in right now.
     func foreignWindow(on screen: NSScreen) -> Bool {
+        let windows = foreignWindows(on: screen)
+        relocated.formIntersection(windows.map { $0.number })  // forget windows that are gone
+        let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        return windows.contains { !relocated.contains($0.number) || $0.pid == front }
+    }
+
+    func foreignWindows(on screen: NSScreen) -> [(number: Int, pid: Int32)] {
         // Window bounds use a top-left origin at the top of the main display.
         let mainHeight = NSScreen.screens.first?.frame.height ?? 0
         let f = screen.frame
@@ -207,14 +239,17 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         let me = Int(ProcessInfo.processInfo.processIdentifier)
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]] ?? []
-        return list.contains { w in
+        return list.compactMap { w in
             guard let layer = w[kCGWindowLayer as String] as? Int, (0..<Int(NSWindow.Level.mainMenu.rawValue)).contains(layer),
-                  (w[kCGWindowOwnerPID as String] as? Int) != me,
+                  let pid = w[kCGWindowOwnerPID as String] as? Int, pid != me,
+                  let number = w[kCGWindowNumber as String] as? Int,
                   !Kiosk.systemOwners.contains(w[kCGWindowOwnerName as String] as? String ?? ""),
                   (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
                   let b = w[kCGWindowBounds as String] as? [String: CGFloat],
-                  let r = CGRect(dictionaryRepresentation: b as CFDictionary) else { return false }
-            return r.width >= 40 && r.height >= 40 && r.intersection(area).width * r.intersection(area).height > 1600
+                  let r = CGRect(dictionaryRepresentation: b as CFDictionary),
+                  r.width >= 40, r.height >= 40,
+                  r.intersection(area).width * r.intersection(area).height > 1600 else { return nil }
+            return (number, Int32(pid))
         }
     }
 

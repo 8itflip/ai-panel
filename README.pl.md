@@ -68,4 +68,7 @@ Testy (bez zależności; test interfejsu używa Chrome bez okna, jeśli jest zai
 `python3 -m unittest discover -s tests` i `node --test tests/i18n.test.mjs`. GitHub Actions uruchamia je
 przy każdym pushu.
 
+Restart okna kiosku albo serwera (np. po zmianie `kiosk.conf`):
+`launchctl kickstart -k gui/$UID/local.ai-panel.kiosk` i `launchctl kickstart -k gui/$UID/local.ai-panel.server`.
+
 Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.
