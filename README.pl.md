@@ -3,6 +3,9 @@
 [English](README.md) · **Polski**
 
 Dashboard na dodatkowy monitor (np. 1920×1080 albo podłużny 1920×720): sesje Claude Code i Codex, limity, koszty i najbliższe spotkania.
+Interfejs jest w języku systemu (polski lub angielski).
+
+![AI Panel na danych demo](docs/screenshot-pl.png)
 Działa w całości lokalnie, bez zależności (Python 3 ze standardową biblioteką + mały helper w Swift).
 
 ## Źródła danych
@@ -45,6 +48,7 @@ Który monitor — w lokalnym pliku `kiosk.conf` (poza gitem), nazwa jak w Ustaw
 
 ```bash
 SCREEN_NAME="M14"
+PANEL_LANG="pl"   # opcjonalnie: wymusza język panelu (domyślnie język systemu)
 ```
 
 Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1). Układ skaluje się

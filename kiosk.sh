@@ -8,14 +8,16 @@
 #   kiosk.sh --auto   tryb dla launchd (co 20 s): uruchamia kiosk, gdy ekran jest podłączony,
 #                     i zamyka go, gdy ekran zostanie odłączony
 set -euo pipefail
-URL="http://127.0.0.1:7319"
+BASE="http://127.0.0.1:7319"
 PROFILE="$HOME/Library/Application Support/ai-panel/chrome"
 AUTO=0
 [ "${1:-}" = "--auto" ] && AUTO=1
 SCREEN_NAME=""
+PANEL_LANG="" # pusty = język systemu; np. "pl" albo "en" wymusza język panelu
 CONF="$(cd "$(dirname "$0")" && pwd)/kiosk.conf"
 # shellcheck source=/dev/null
 [ -f "$CONF" ] && . "$CONF"
+URL="$BASE/${PANEL_LANG:+?lang=$PANEL_LANG}"
 
 # Pozycja i rozmiar wybranego ekranu we współrzędnych Chrome (lewy górny róg głównego ekranu = 0,0),
 # jako "x,y w,h". Rozmiar jest konieczny: bez niego Chrome przesuwa okno na sąsiedni ekran.
@@ -43,7 +45,7 @@ if [ "$AUTO" = 1 ]; then
     exit 0
   fi
   running && exit 0
-  curl -sf -o /dev/null -m 2 "$URL/api/state" || exit 0 # serwer jeszcze nie wstał
+  curl -sf -o /dev/null -m 2 "$BASE/api/state" || exit 0 # serwer jeszcze nie wstał
 fi
 
 ARGS=(--app="$URL" --user-data-dir="$PROFILE" --no-first-run --no-default-browser-check --disable-session-crashed-bubble)

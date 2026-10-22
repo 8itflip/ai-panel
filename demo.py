@@ -29,7 +29,7 @@ def state():
     now = int(time.time() * 1000)
     claude = [
         _session(1, "claude", "Migrate auth to OAuth 2.1", "acme-api", "waiting",
-                 "Both options work. Should I keep the legacy token endpoint for one more release?", 4 * MIN, 3.42, "pytanie"),
+                 "Both options work. Should I keep the legacy token endpoint for one more release?", 4 * MIN, 3.42, "question"),
         _session(2, "claude", "Fix flaky checkout tests", "web-shop", "working",
                  "Running the e2e suite again with the retry fix applied…", 1 * MIN, 1.87),
         _session(3, "claude", "Upgrade Postgres to 17", "infra", "working",
