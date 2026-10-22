@@ -328,7 +328,7 @@ function renderCalendar(cal) {
     if (day !== lastDay) { if (lastDay !== null || day !== today) html += `<li class="day">${esc(day)}</li>`; lastDay = day; }
     const mins = (e.start - now) / 60000;
     let cls = "later", when = ""; // the time is already in the line under the title
-    if (e.start <= now) { cls = "now"; when = t("cal.ongoing", { time: hm(e.end) }); }
+    if (e.start <= now) { cls = "now"; when = t("cal.ongoing"); } // the end time is already under the title
     else if (mins <= 15) { cls = "soon"; when = t("in", { t: t("dur.min", { m: Math.max(1, Math.round(mins)) }) }); }
     else if (mins < 180) { cls = "next"; when = until(e.start); }
     const meta = [`${hm(e.start)}–${hm(e.end)}`, e.location && !/^https?:/.test(e.location) ? e.location : e.calendar].filter(Boolean).join(" · ");

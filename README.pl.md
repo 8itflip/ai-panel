@@ -34,8 +34,9 @@ Claude Code i Codex zapisują sesje w nieudokumentowanych formatach. Gdy po aktu
 pasować (brak pól, kolumn w bazie albo znanych zdarzeń), kolumna pokazuje „zmienił się format danych”
 ze szczegółem, zamiast po cichu zostać pusta.
 
-„Aktywne” sesje Claude to te z żywym procesem. Codex trzyma wszystkie wątki w jednym procesie,
-więc dla niego aktywne = ruch w ciągu ostatnich 24 h (`CODEX_ACTIVE_HOURS` w `server.py`).
+„Aktywne” sesje to te z ruchem w ciągu ostatnich 24 h (`CLAUDE_ACTIVE_HOURS` i `CODEX_ACTIVE_HOURS`
+w `server.py`). Aplikacja Claude usypia bezczynne sesje po ok. 30 minutach; panel pokazuje je dalej
+(lista z `~/Library/Application Support/Claude/claude-code-sessions`), a kliknięcie je budzi.
 
 ## Uruchomienie
 

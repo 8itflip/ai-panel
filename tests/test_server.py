@@ -147,11 +147,39 @@ class Forecast(unittest.TestCase):
 class ClaudeSessions(Temp):
     def setUp(self):
         super().setUp()
-        for name in ("CLAUDE_SESSIONS", "CLAUDE_PROJECTS"):
+        for name in ("CLAUDE_SESSIONS", "CLAUDE_PROJECTS", "CLAUDE_APP_SESSIONS", "PARALL_DIR"):
             self.addCleanup(setattr, server, name, getattr(server, name))
         server.CLAUDE_SESSIONS = self.dir / "sessions"
         server.CLAUDE_PROJECTS = self.dir / "projects"
+        server.CLAUDE_APP_SESSIONS = [self.dir / "app"]
+        server.PARALL_DIR = self.dir / "parall"
         server.CLAUDE_SESSIONS.mkdir()
+
+    def app_session(self, sid, root=None, **fields):
+        """A session the Claude app lists but has put to sleep (no live process)."""
+        meta = dict({"sessionId": "local_" + sid, "cliSessionId": sid, "cwd": "/tmp/web-shop", "title": "Sleeping " + sid,
+                     "isArchived": False, "lastActivityAt": server.now_ms() - 3600_000}, **fields)
+        path = (root or self.dir / "app") / "account" / "org" / ("local_%s.json" % sid)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(meta))
+        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-web-shop" / ("%s.jsonl" % sid), [
+            {"type": "assistant", "message": {"content": [{"type": "text", "text": "Merged."}]}}])
+
+    def test_sleeping_app_sessions_are_listed(self):
+        self.session("live", status="busy")
+        self.app_session("s1")
+        self.app_session("s2", root=self.dir / "parall" / "Claude (Work)" / "claude-code-sessions")
+        self.app_session("old", lastActivityAt=server.now_ms() - 3 * 24 * 3600_000)
+        self.app_session("archived", isArchived=True)
+        sessions = {s["id"]: s for s in server.claude_sessions()}
+        self.assertEqual(set(sessions), {"live", "s1", "s2"})
+        self.assertEqual((sessions["s1"]["state"], sessions["s1"]["url"]), ("done", "claude://code/continue?session=local_s1"))
+        self.assertEqual(sessions["s2"]["instance"], "Work")
+
+    def test_live_session_is_not_listed_twice(self):
+        self.session("both")
+        self.app_session("both")
+        self.assertEqual([s["id"] for s in server.claude_sessions()], ["both"])
 
     def session(self, sid, **fields):
         data = dict({"pid": os.getpid(), "sessionId": sid, "cwd": "/tmp/acme-api", "status": "idle",
@@ -267,6 +295,25 @@ class PullRequestGroups(unittest.TestCase):
         server.PR_GROUPS = [{"name": None, "github": ["*"]}]
         groups = server.pr_groups()
         self.assertEqual([len(g["items"]) for g in groups], [3])
+
+
+class CheckerStart(unittest.TestCase):
+    def test_parallel_requests_start_the_git_checker_once(self):
+        errors = []
+
+        def start():
+            try:
+                server.start_local_checker()
+            except Exception as exc:  # the bug: "threads can only be started once"
+                errors.append(exc)
+
+        threads = [threading.Thread(target=start) for _ in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(errors, [])
+        self.assertTrue(server._local.is_alive())
 
 
 @unittest.skipUnless(shutil.which("git"), "git not installed")
