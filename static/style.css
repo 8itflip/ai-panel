@@ -58,7 +58,8 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-html { font-size: min(calc(100vw / 120), calc(100vh / 45)); }
+/* 1920 px szerokości → ok. 18 px bazowo; na 720 px wysokości ogranicza wysokość. */
+html { font-size: min(calc(100vw / 107), calc(100vh / 45)); }
 body {
   background: var(--bg);
   color: var(--ink);

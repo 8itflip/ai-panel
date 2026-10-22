@@ -223,7 +223,9 @@ async function poll() {
   try {
     const r = await fetch("/api/state", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
-    last = await r.json();
+    const data = await r.json();
+    if (last && data.version !== last.version) return location.reload(); // nowa wersja strony
+    last = data;
     lastOk = Date.now();
     render();
   } catch (e) { /* zostaw ostatni stan */ }
