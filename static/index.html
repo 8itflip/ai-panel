@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Panel</title>
+  <link rel="stylesheet" href="style.css">
+  <script>
+    try { var t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+  <main class="grid">
+    <section class="card side">
+      <header class="clock">
+        <div class="time" id="time">--:--</div>
+        <div class="date" id="date"></div>
+        <div class="headline" id="headline"></div>
+      </header>
+
+      <div class="tiles">
+        <div class="tile" id="tile-waiting"><b>0</b><span>czeka</span></div>
+        <div class="tile" id="tile-working"><b>0</b><span>pracuje</span></div>
+        <div class="tile" id="tile-done"><b>0</b><span>gotowe</span></div>
+      </div>
+
+      <div class="cal">
+        <h2>Kalendarz</h2>
+        <ul id="events"></ul>
+      </div>
+
+      <footer class="side-foot">
+        <button id="theme" type="button" aria-label="Zmień motyw" title="Motyw"></button>
+        <span id="conn"></span>
+      </footer>
+    </section>
+
+    <section class="card col" data-tool="claude">
+      <header class="col-head">
+        <div class="col-title">
+          <span class="glyph claude" aria-hidden="true">✳</span>
+          <h1>Claude</h1>
+          <span class="plan"></span>
+          <span class="cost"></span>
+        </div>
+        <div class="bars"></div>
+      </header>
+      <ul class="sessions"></ul>
+    </section>
+
+    <section class="card col" data-tool="codex">
+      <header class="col-head">
+        <div class="col-title">
+          <span class="glyph codex" aria-hidden="true">&gt;_</span>
+          <h1>Codex</h1>
+          <span class="plan"></span>
+          <span class="cost"></span>
+        </div>
+        <div class="bars"></div>
+      </header>
+      <ul class="sessions"></ul>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
