@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    # macOS: the panel is macOS-only (EventKit, WebKit, launchd) and the runner image includes Chrome
+    # for the UI smoke test.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Server and UI tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Translation tests
+        run: node --test tests/i18n.test.mjs
+
+      - name: JavaScript syntax
+        run: for f in static/*.js; do node --check "$f"; done
+
+      - name: Swift builds
+        run: ./calendar/build.sh && ./kiosk/build.sh

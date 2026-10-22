@@ -95,6 +95,15 @@ AI_PANEL_DEMO=1 python3 server.py  # demo data for screenshots
 
 The page reloads itself when files in `static/` change.
 
+Tests (no dependencies; the UI smoke test uses headless Chrome when it is installed):
+
+```bash
+python3 -m unittest discover -s tests
+node --test tests/i18n.test.mjs
+```
+
+GitHub Actions runs them on every push, together with a JavaScript syntax check and both Swift builds.
+
 ## License
 
 [MIT](LICENSE)
