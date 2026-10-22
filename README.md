@@ -75,6 +75,13 @@ GitLab merge requests need [glab](https://gitlab.com/gitlab-org/cli) signed in w
 `glab auth login --hostname <host>`. PRs from other GitHub owners land in "Other".
 Restart the server after changing the file.
 
+To restart the kiosk window or the server (for example after editing `kiosk.conf`):
+
+```bash
+launchctl kickstart -k gui/$UID/local.ai-panel.kiosk
+launchctl kickstart -k gui/$UID/local.ai-panel.server
+```
+
 `./uninstall.sh` removes the agents. Logs are in `~/Library/Logs/ai-panel/`.
 
 ## Privacy
