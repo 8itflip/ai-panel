@@ -54,6 +54,13 @@ function usd(x) {
   return "$" + Math.round(x).toLocaleString(LOCALE);
 }
 
+const cents = (x) => "$" + x.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function bytes(n) {
+  const gb = n / 1024 ** 3;
+  return gb >= 1 ? `${gb.toLocaleString(LOCALE, { maximumFractionDigits: 1 })} GB` : `${Math.round(n / 1024 ** 2)} MB`;
+}
+
 function tokensLabel(n) {
   const f = (x) => x.toLocaleString(LOCALE, { maximumFractionDigits: x < 10 ? 1 : 0 });
   if (n >= 1e9) return t("num.b", { n: f(n / 1e9) });
@@ -64,14 +71,19 @@ function tokensLabel(n) {
 
 /* ---------- zegar i odliczania ---------- */
 
+function fillTimes(root = document) {
+  // Wypełniane od razu przy rysowaniu: puste pola zmieniłyby później wysokość i rozjechały dopasowanie list.
+  root.querySelectorAll("[data-ago]").forEach((el) => { el.textContent = ago(+el.dataset.ago); });
+  root.querySelectorAll("[data-until]").forEach((el) => {
+    el.textContent = t(el.dataset.fmt || "reset", { until: until(+el.dataset.until) });
+  });
+}
+
 function tickClock() {
   const now = new Date();
   $("#time").textContent = `${now.getHours()}:${pad(now.getMinutes())}`;
   $("#date").textContent = now.toLocaleDateString(LOCALE, { weekday: "long", day: "numeric", month: "long" });
-  document.querySelectorAll("[data-ago]").forEach((el) => { el.textContent = ago(+el.dataset.ago); });
-  document.querySelectorAll("[data-until]").forEach((el) => {
-    el.textContent = t(el.dataset.fmt || "reset", { until: until(+el.dataset.until) });
-  });
+  fillTimes();
 }
 
 /* ---------- nagłówki kolumn: limity, prognoza, trend, status ---------- */
@@ -84,13 +96,15 @@ function forecastNote(bar) {
 
 function meter(label, bar) {
   if (!bar) return "";
-  const out = bar.forecast?.exhausted;
+  // Pokazujemy, ile ZOSTAŁO: liczba i wypełnienie paska maleją w miarę zużycia.
+  const left = Math.max(0, 100 - bar.pct);
+  const out = bar.forecast?.exhausted || left === 0;
   const warn = bar.forecast?.beforeReset;
-  const filled = Math.round(bar.pct / 5);
+  const filled = Math.round(left / 5);
   const segs = Array.from({ length: 20 }, (_, i) => `<i${i < filled ? ' class="f"' : ""}></i>`).join("");
   const reset = bar.resetsAt ? `<span data-until="${bar.resetsAt}"></span>` : "";
-  return `<div class="meter${bar.pct >= 80 || warn ? " hot" : ""}${out ? " out" : ""}">
-    <div class="row1"><span>${label}</span><span class="pct">${bar.pct}%</span></div>
+  return `<div class="meter${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
+    <div class="row1"><span>${label}</span><span class="pct">${t("pct.left", { n: left })}</span></div>
     <div class="segs">${segs}</div>
     <div class="reset">${reset}</div>${forecastNote(bar)}
   </div>`;
@@ -140,10 +154,24 @@ function renderUsage(col, usage, error) {
   } else {
     cost.textContent = "";
   }
+  // Prawdziwe pieniądze ponad abonament; ostrzeżenie przy 80% limitu extra usage albo saldzie < $5.
+  const spend = $(".spend", col);
+  const extra = usage?.extra, credits = usage?.credits;
+  if (extra) {
+    spend.innerHTML = t("spend.extra", { used: cents(extra.used), limit: usd(extra.limit) });
+    spend.classList.toggle("warn", !!extra.limit && extra.used / extra.limit >= 0.8);
+  } else if (credits != null) {
+    spend.innerHTML = t("spend.credits", { balance: cents(credits) });
+    spend.classList.toggle("warn", credits < 5);
+  } else {
+    spend.textContent = "";
+  }
   $(".bars", col).innerHTML = usage
     ? meter(t("limit.session"), usage.session) + meter(t("limit.weekly"), usage.weekly) + trend(usage.trend)
     : `<div class="na">${esc(error ? t(`usage.${error}`) : t("usage.none"))}</div>`;
   $(".banner", col).innerHTML = limitBanner(usage);
+  fillTimes(col.querySelector(".col-head"));
+  fillTimes(col.querySelector(".banner"));
 }
 
 /* ---------- listy sesji ---------- */
@@ -153,7 +181,7 @@ function sessionRow(s, tool) {
   const tip = s.detail && s.detail !== "question" ? ` title="${esc(s.detail)}"` : "";
   const open = s.url ? ` data-open="session" data-tool="${tool}" data-id="${esc(s.id)}"` : "";
   const inst = s.instance ? `<span class="inst">${esc(s.instance)}</span>` : "";
-  return `<li class="s ${s.state}"${tip}${open}>
+  return `<li class="s ${s.state}${s.stale ? " stale" : ""}"${tip}${open}>
     <span class="ic">${ICON[s.state] || ""}</span>
     <div class="main">
       <div class="name"><span class="n">${esc(s.name)}</span>${inst}<span class="proj">${esc(s.project)}</span></div>
@@ -193,15 +221,21 @@ function renderTool(key, data, usageError, status) {
   renderUsage(col, data.usage, usageError);
   renderStatus(col, status);
   const sessions = [...data.sessions].sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || (b.time - a.time));
-  const sig = JSON.stringify([sessions.map((s) => [s.id, s.state, s.name, s.project, s.message, s.detail, s.instance]), data.error]);
-  if (sigs[key] === sig) return updateCosts(col, sessions); // bez zmian — nie restartujemy animacji
-  sigs[key] = sig;
+  const stale = sessions.filter((s) => s.stale);
+  $(".col-foot", col).textContent = stale.length
+    ? t("stale", { n: stale.length, mem: bytes(stale.reduce((m, s) => m + (s.memory || 0), 0)) }) : "";
+  const sig = JSON.stringify([sessions.map((s) => [s.id, s.state, s.name, s.project, s.message, s.detail, s.instance, s.stale]), data.error]);
   const ul = $(".sessions", col);
+  // Bez zmian i nadal się mieści — nie przebudowujemy listy (animacje się nie restartują).
+  if (sigs[key] === sig && ul.dataset.h === String(ul.clientHeight)) return updateCosts(col, sessions);
+  sigs[key] = sig;
   ul.innerHTML = sessions.length
     ? sessions.map((s) => sessionRow(s, key)).join("")
     : `<li class="col-empty">${t("empty.sessions")}</li>`;
   if (data.error) ul.insertAdjacentHTML("afterbegin", `<li class="col-err">${esc(data.error)}</li>`);
+  fillTimes(ul);
   fitList(ul, ".s", "more.sessions");
+  ul.dataset.h = String(ul.clientHeight);
 }
 
 /* ---------- podsumowanie ---------- */
@@ -301,30 +335,124 @@ function prRank(p) {
   return p.draft ? 4 : 3;
 }
 
-function renderPRs(gh) {
+function prRow(p, group) {
+  const tags = [
+    p.review && `<span class="tag review">${t("pr.review")}</span>`,
+    p.decision === "CHANGES_REQUESTED" && `<span class="tag bad">${t("pr.changes")}</span>`,
+    p.decision === "APPROVED" && `<span class="tag good">${t("pr.approved")}</span>`,
+    p.draft && '<span class="tag">draft</span>',
+  ].filter(Boolean).join("");
+  return `<li class="pr" data-g="${group}" data-open="pr" data-url="${esc(p.url)}">
+    <span class="ci ${esc(p.ci || "none")}" title="${esc(t(CI[p.ci] || "ci.none"))}"></span>
+    <div><div class="t">${esc(p.title)}</div><div class="m">${esc(p.repo)} ${esc(p.ref)} ${tags}</div></div>
+  </li>`;
+}
+
+function prGroupMessage(g) {
+  if (g.error === "glab_missing" || g.error === "glab_auth") return t(`pr.${g.error}`, { host: g.host });
+  if (g.error) return t("pr.error", { e: g.error });
+  return t(g.loading ? "pr.loading" : "pr.none");
+}
+
+function fitGroups(ul) {
+  // Za mało miejsca: ucinamy z grupy, która ma najwięcej widocznych wierszy. Gdy nawet po jednym
+  // wierszu na grupę się nie mieści, grupa zostaje z samym „+N więcej” — nic nie jest ucięte w połowie.
+  const hidden = {};
+  while (ul.scrollHeight > ul.clientHeight + 1) {
+    const counts = {};
+    ul.querySelectorAll(".pr").forEach((r) => { counts[r.dataset.g] = (counts[r.dataset.g] || 0) + 1; });
+    const keys = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    const g = keys.find((k) => counts[k] > 1) ?? keys[keys.length - 1];
+    if (g === undefined) break;
+    const rows = ul.querySelectorAll(`.pr[data-g="${g}"]`);
+    rows[rows.length - 1].remove();
+    hidden[g] = (hidden[g] || 0) + 1;
+    const more = ul.querySelector(`[data-more="${g}"]`);
+    more.hidden = false;
+    more.textContent = t("more.prs", { n: hidden[g] });
+  }
+}
+
+/* Rozwinięcie grup PR-ów: wybór użytkownika z localStorage, a bez wyboru — rozwinięte tylko te,
+   które wymagają uwagi (czeka Twoje review albo CI nie przeszło). */
+let prOpen = {};
+try { prOpen = JSON.parse(localStorage.getItem("prOpen") || "{}"); } catch (e) {}
+
+const groupKey = (g) => (g.other ? "__other" : g.name || "__all");
+const needsAttention = (g) => g.items.some((p) => p.review || p.ci === "failure" || p.ci === "error");
+const isOpen = (g) => (groupKey(g) in prOpen ? prOpen[groupKey(g)] : needsAttention(g));
+
+function toggleGroup(key, open) {
+  prOpen[key] = open;
+  try { localStorage.setItem("prOpen", JSON.stringify(prOpen)); } catch (e) {}
+  delete sigs.prs;
+  delete sigs.local;
+  render();
+}
+
+function groupSummary(g) {
+  if (!g.items.length) {
+    if (g.error) return `<span class="warn">${esc(t(g.error.startsWith("glab_") ? "pr.notConnected" : "pr.failed"))}</span>`;
+    return esc(t(g.loading ? "pr.loading" : "pr.none"));
+  }
+  const n = (f) => g.items.filter(f).length;
+  const ci = [["success", n((p) => p.ci === "success")], ["failure", n((p) => p.ci === "failure" || p.ci === "error")],
+    ["pending", n((p) => p.ci === "pending" || p.ci === "expected")]]
+    .filter(([, c]) => c).map(([k, c]) => `<span class="cn" title="${esc(t(CI[k]))}"><i class="ci ${k}"></i>${c}</span>`).join("");
+  const review = n((p) => p.review);
+  return `<b>${g.items.length}</b>${ci}${review ? `<span class="tag review">${esc(t("pr.toReview", { n: review }))}</span>` : ""}`;
+}
+
+function renderPRs(groups) {
   const ul = $("#prs");
-  const prs = [...(gh?.data || [])].sort((a, b) => (prRank(a) - prRank(b)) || (b.updated - a.updated));
-  $("#pr-count").textContent = prs.length ? prs.length : "";
-  const sig = JSON.stringify([prs, gh?.error]);
+  groups = groups || [];
+  const total = groups.reduce((n, g) => n + g.items.length, 0);
+  $("#pr-count").textContent = total || "";
+  const sig = JSON.stringify([groups, groups.map(isOpen)]);
   if (sigs.prs === sig) return;
   sigs.prs = sig;
-  if (!prs.length) {
-    ul.innerHTML = `<li class="empty">${esc(gh?.error ? t("pr.error", { e: gh.error }) : t(gh?.data ? "pr.none" : "pr.loading"))}</li>`;
-    return;
+  const named = groups.length > 1 || groups[0]?.name;
+  let html = "";
+  groups.forEach((g, gi) => {
+    const items = [...g.items].sort((a, b) => (prRank(a) - prRank(b)) || (b.updated - a.updated));
+    const open = !named || isOpen(g);
+    if (named) {
+      const name = g.other ? t("pr.other") : g.name;
+      html += `<li class="pr-group${open ? " open" : ""}" data-toggle="${esc(groupKey(g))}" data-state="${open ? 1 : 0}">
+        <span class="chev"></span><span class="gn">${esc(name)}</span><span class="sum">${groupSummary(g)}</span></li>`;
+    }
+    if (!open) return;
+    if (!items.length) html += `<li class="empty">${esc(prGroupMessage(g))}</li>`;
+    else if (g.error) html += `<li class="empty warn">${esc(prGroupMessage(g))}</li>`;
+    html += items.map((p) => prRow(p, gi)).join("") + `<li class="more" data-more="${gi}" hidden></li>`;
+  });
+  ul.innerHTML = html || `<li class="empty">${t("pr.loading")}</li>`;
+  fitGroups(ul);
+}
+
+/* ---------- lokalne zmiany w repozytoriach sesji ---------- */
+
+function renderLocal(local) {
+  const ul = $("#local");
+  const repos = local?.data || [];
+  const sig = JSON.stringify([repos, prOpen.__local]);
+  if (sigs.local === sig) return;
+  sigs.local = sig;
+  if (!repos.length) { ul.innerHTML = ""; return; } // nic do pokazania — sekcja znika
+  const open = !!prOpen.__local;
+  const files = repos.reduce((n, r) => n + r.files, 0), ahead = repos.reduce((n, r) => n + (r.ahead || 0), 0);
+  const sum = [`<b>${esc(t("local.repos", { n: repos.length }))}</b>`, files && esc(t("local.files", { n: files })),
+    ahead && `<span class="warn">${esc(t("local.ahead", { n: ahead }))}</span>`].filter(Boolean).join("<span class=\"sep\">·</span>");
+  let html = `<li class="pr-group${open ? " open" : ""}" data-toggle="__local" data-state="${open ? 1 : 0}">
+    <span class="chev"></span><span class="gn">${t("local.title")}</span><span class="sum">${sum}</span></li>`;
+  if (open) {
+    html += repos.map((r) => {
+      const bits = [r.files && t("local.files", { n: r.files }), r.ahead && t("local.ahead", { n: r.ahead }),
+        r.noRemote && t("local.noRemote")].filter(Boolean).join(" · ");
+      return `<li class="lr"><span class="t">${esc(r.repo)}</span><span class="m">${esc(r.branch)}</span><span class="n">${esc(bits)}</span></li>`;
+    }).join("");
   }
-  ul.innerHTML = prs.map((p) => {
-    const tags = [
-      p.review && `<span class="tag review">${t("pr.review")}</span>`,
-      p.decision === "CHANGES_REQUESTED" && `<span class="tag bad">${t("pr.changes")}</span>`,
-      p.decision === "APPROVED" && `<span class="tag good">${t("pr.approved")}</span>`,
-      p.draft && '<span class="tag">draft</span>',
-    ].filter(Boolean).join("");
-    return `<li class="pr" data-open="pr" data-url="${esc(p.url)}">
-      <span class="ci ${esc(p.ci || "none")}" title="${esc(t(CI[p.ci] || "ci.none"))}"></span>
-      <div><div class="t">${esc(p.title)}</div><div class="m">${esc(p.repo)} #${p.number} ${tags}</div></div>
-    </li>`;
-  }).join("");
-  fitList(ul, ".pr", "more.prs");
+  ul.innerHTML = html;
 }
 
 /* ---------- pętla ---------- */
@@ -335,8 +463,9 @@ function render() {
   renderTool("claude", last.claude, last.usageError, st.claude);
   renderTool("codex", last.codex, last.usageError, st.codex);
   renderSummary([...last.claude.sessions, ...last.codex.sessions], last.claude.usage, last.codex.usage);
+  renderLocal(last.local);
+  renderPRs(last.prs); // najpierw PR-y i zmiany: kalendarz dopasowuje się do miejsca, które zostanie
   renderCalendar(last.calendar || {});
-  renderPRs(last.github);
   tickClock();
 }
 
@@ -357,6 +486,11 @@ async function poll() {
 }
 
 /* ---------- otwieranie: sesje w aplikacji, PR-y i spotkania w przeglądarce ---------- */
+
+document.addEventListener("click", (ev) => {
+  const group = ev.target.closest("[data-toggle]");
+  if (group) toggleGroup(group.dataset.toggle, group.dataset.state !== "1");
+});
 
 document.addEventListener("click", async (ev) => {
   const el = ev.target.closest("[data-open]");
