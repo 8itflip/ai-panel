@@ -184,6 +184,8 @@ h2 {
 .s .right { text-align: right; white-space: nowrap; }
 .s .lbl { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
 .s .when { font-size: 0.8rem; color: var(--faint); margin-top: 0.1rem; }
+.s .usd { color: var(--muted); font-weight: 600; }
+.s .usd:not(:empty)::after { content: " · "; color: var(--faint); font-weight: 400; }
 
 .s[data-id] { cursor: pointer; transition: background 0.15s, transform 0.1s; }
 .s[data-id]:hover { background: var(--line); }
