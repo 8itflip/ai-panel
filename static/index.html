@@ -23,10 +23,18 @@
         <div class="tile" id="tile-working"><b>0</b><span>pracuje</span></div>
         <div class="tile" id="tile-done"><b>0</b><span>gotowe</span></div>
       </div>
+      <div class="today" id="today"></div>
+
+      <div id="meeting" hidden></div>
 
       <div class="cal">
         <h2>Kalendarz</h2>
         <ul id="events"></ul>
+      </div>
+
+      <div class="prs">
+        <h2>Pull requesty <span id="pr-count"></span></h2>
+        <ul id="prs"></ul>
       </div>
 
       <footer class="side-foot">
@@ -41,10 +49,12 @@
           <span class="glyph claude" aria-hidden="true">✳</span>
           <h1>Claude</h1>
           <span class="plan"></span>
+          <span class="svc"></span>
           <span class="cost"></span>
         </div>
         <div class="bars"></div>
       </header>
+      <div class="banner"></div>
       <ul class="sessions"></ul>
     </section>
 
@@ -54,10 +64,12 @@
           <span class="glyph codex" aria-hidden="true">&gt;_</span>
           <h1>Codex</h1>
           <span class="plan"></span>
+          <span class="svc"></span>
           <span class="cost"></span>
         </div>
         <div class="bars"></div>
       </header>
+      <div class="banner"></div>
       <ul class="sessions"></ul>
     </section>
   </main>
