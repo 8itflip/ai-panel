@@ -1,6 +1,6 @@
 # AI Panel
 
-Dashboard na podłużny ekran 1920×720: sesje Claude Code i Codex, limity, koszty i najbliższe spotkania.
+Dashboard na dodatkowy monitor (np. 1920×1080 albo podłużny 1920×720): sesje Claude Code i Codex, limity, koszty i najbliższe spotkania.
 Działa w całości lokalnie, bez zależności (Python 3 ze standardową biblioteką + mały helper w Swift).
 
 ## Źródła danych
@@ -28,8 +28,17 @@ więc dla niego aktywne = ruch w ciągu ostatnich 24 h (`CODEX_ACTIVE_HOURS` w `
 ./uninstall.sh   # usuwa usługi
 ```
 
-Kiosk startuje sam: usługa `local.ai-panel.kiosk` co 20 s sprawdza, czy podłączony jest ekran
-o proporcjach > 2:1. Jeśli tak, otwiera na nim panel w osobnym profilu Chrome; po odłączeniu ekranu
-zamyka to okno, żeby nie zostało na pełnym ekranie głównego monitora.
+Kiosk startuje sam: usługa `local.ai-panel.kiosk` co 20 s sprawdza, czy podłączony jest monitor panelu.
+Jeśli tak, otwiera na nim panel w osobnym profilu Chrome; po odłączeniu monitora zamyka to okno,
+żeby nie zostało na pełnym ekranie innego ekranu. Główny ekran nigdy nie jest brany.
+
+Który monitor — w lokalnym pliku `kiosk.conf` (poza gitem), nazwa jak w Ustawieniach → Wyświetlacze:
+
+```bash
+SCREEN_NAME="M14"
+```
+
+Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1). Układ skaluje się
+do dowolnej rozdzielczości; projektowany pod 1920×720 i 1920×1080.
 
 Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.
