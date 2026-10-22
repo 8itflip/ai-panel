@@ -223,3 +223,82 @@ h2 {
 @media (prefers-reduced-motion: reduce) {
   .dot::after, .spin { animation: none; }
 }
+
+/* ---------- dziś, spotkanie, PR-y ---------- */
+.side { gap: 1rem; }
+.today { font-size: 0.95rem; color: var(--muted); margin-top: -0.3rem; }
+.today span { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; font-weight: 600; margin-right: 0.3rem; }
+.today b { color: var(--ink); font-weight: 650; }
+
+.meeting {
+  display: flex; align-items: center; gap: 0.8rem;
+  background: var(--work-bg); border-radius: 0.8rem; padding: 0.7rem 0.8rem 0.7rem 1rem;
+}
+.meeting.now { background: var(--wait-bg); }
+.meeting .mt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.meeting .mw { font-size: 0.8rem; font-weight: 650; color: var(--work); }
+.meeting.now .mw { color: var(--wait); }
+.meeting b { font-size: 1.05rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.meeting button {
+  font: inherit; font-size: 0.9rem; font-weight: 650; cursor: pointer;
+  background: var(--work); color: #fff; border: 0; border-radius: 0.6rem; padding: 0.5rem 0.95rem;
+}
+.meeting.now button { background: var(--wait); color: var(--wait-ink); }
+
+.cal { flex: 1 1 0; min-height: 11rem; }
+.ev.link { cursor: pointer; }
+.ev.link .t::after { content: " ↗"; color: var(--faint); font-weight: 400; }
+.ev.link:hover { background: var(--line); }
+
+.prs { flex: 0 1 auto; max-height: 31%; min-height: 0; display: flex; flex-direction: column; }
+#pr-count { color: var(--faint); margin-left: 0.2rem; }
+#prs { overflow: hidden; display: flex; flex-direction: column; gap: 0.1rem; min-height: 0; }
+.pr {
+  display: grid; grid-template-columns: 0.7rem 1fr; column-gap: 0.7rem; align-items: center;
+  padding: 0.35rem 0.5rem 0.35rem 0.2rem; border-radius: 0.6rem; cursor: pointer;
+}
+.pr:hover, .pr.opening { background: var(--line); }
+.pr > div { min-width: 0; }
+.pr .t { font-size: 0.95rem; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pr .m { font-size: 0.78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ci { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: var(--faint); }
+.ci.success { background: var(--done); }
+.ci.failure, .ci.error { background: var(--wait); }
+.ci.pending, .ci.expected { background: var(--work); }
+.tag {
+  font-size: 0.7rem; font-weight: 600; border: 1px solid var(--line); border-radius: 1rem;
+  padding: 0 0.4rem; margin-left: 0.25rem; color: var(--muted);
+}
+.tag.review { background: var(--wait); border-color: var(--wait); color: var(--wait-ink); }
+.tag.bad { color: var(--wait); border-color: var(--wait); }
+.tag.good { color: var(--done); border-color: var(--done); }
+.prs .more, .prs .empty { font-size: 0.85rem; }
+
+/* ---------- nagłówek kolumny: status, trend, prognoza, wyczerpany limit ---------- */
+.svc { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; min-width: 0; }
+.svc i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--faint); flex: none; }
+.svc.ok i { background: var(--done); }
+.svc.minor i { background: #e0a100; }
+.svc.minor { color: #b98400; }
+.svc.major i { background: var(--wait); }
+.svc.major { color: var(--wait); }
+.svc span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
+
+.bars { grid-template-columns: 1fr 1fr 8.5rem; gap: 1.2rem; }
+.trend { display: flex; flex-direction: column; }
+.trend .row1 { font-size: 0.85rem; color: var(--muted); }
+.tbars { flex: 1; display: flex; align-items: flex-end; gap: 0.15rem; margin-top: 0.35rem; min-height: 2.2rem; }
+.tbars i { flex: 1; background: var(--track); border-radius: 0.12rem 0.12rem 0 0; min-height: 0.15rem; }
+.tbars i.today { background: var(--ink); }
+.meter .fc { font-size: 0.78rem; color: var(--warn); font-weight: 650; margin-top: 0.1rem; }
+.meter.out .pct { color: var(--wait); }
+.meter.out .segs i.f { background: var(--wait); }
+.limit-out {
+  margin: 0.6rem 0.9rem 0; padding: 0.55rem 0.9rem; border-radius: 0.7rem;
+  background: var(--wait); color: var(--wait-ink); font-size: 0.95rem; font-weight: 650;
+}
+
+.s .inst {
+  flex: none; font-size: 0.7rem; font-weight: 650; color: var(--muted); margin-left: 0.5rem;
+  border: 1px solid var(--line); border-radius: 1rem; padding: 0 0.45rem; align-self: center;
+}

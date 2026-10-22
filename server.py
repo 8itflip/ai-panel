@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """AI Panel — lokalny serwer dashboardu sesji Claude Code i Codex.
 
-Czyta wyłącznie lokalne pliki (sesje Claude, baza Codexa, cache kalendarza)
-oraz API OpenUsage na localhost. Nic nie wysyła na zewnątrz.
+Czyta lokalne pliki (sesje Claude, baza Codexa, cache kalendarza) i API OpenUsage na localhost.
+Na zewnątrz tylko pobiera: publiczne strony statusu Anthropic/OpenAI i listę PR-ów przez `gh`.
+Nie wysyła żadnych danych z komputera.
 """
 import json
 import os
 import plistlib
 import re
+import shutil
 import sqlite3
 import subprocess
+import threading
 import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,7 +47,18 @@ CLAUDE_DESKTOP_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 CLAUDE_BUNDLE = "com.anthropic.claudefordesktop"
 # Druga instancja Claude z Parall ma własne sesje; jej proces działa z „…/Application Support/Parall/<Nazwa>/claude-code/…”.
 PARALL_EXE = re.compile(r"/Application Support/Parall/([^/]+)/claude-code/")
+GH_PR = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/pull/\d+$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+CACHE_DIR = HOME / "Library" / "Caches" / "ai-panel"
+USAGE_HISTORY = CACHE_DIR / "usage-history.json"
+# launchd ma okrojony PATH, a gh z Homebrew leży poza nim.
+GH = shutil.which("gh", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
+STATUS_PAGES = {
+    "claude": "https://status.claude.com/api/v2/summary.json",
+    "codex": "https://status.openai.com/api/v2/summary.json",
+}
+SLOW_POLL = 120  # s — GitHub i strony statusu
 
 STATIC_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
 
@@ -247,24 +261,34 @@ def claude_url(d):
     return None
 
 
-def claude_bundle(pid):
-    """Bundle ID aplikacji, do której należy sesja (główny Claude albo instancja z Parall)."""
+_instances = {}
+
+
+def claude_instance(pid):
+    """(etykieta, bundle ID) aplikacji, do której należy sesja. Etykieta None = główny Claude."""
+    if pid in _instances:
+        return _instances[pid]
     try:
         exe = subprocess.run(["/bin/ps", "-o", "comm=", "-p", str(pid)],
                              capture_output=True, text=True, timeout=2).stdout
     except (OSError, subprocess.SubprocessError):
-        return CLAUDE_BUNDLE
+        return None, CLAUDE_BUNDLE  # bez cache — spróbujemy następnym razem
+    result = (None, CLAUDE_BUNDLE)
     m = PARALL_EXE.search(exe)
-    if not m:
-        return CLAUDE_BUNDLE
-    for base in (Path("/Applications"), HOME / "Applications"):
-        info = base / (m.group(1) + ".app") / "Contents" / "Info.plist"
-        try:
-            with open(info, "rb") as f:
-                return plistlib.load(f).get("CFBundleIdentifier") or CLAUDE_BUNDLE
-        except (OSError, plistlib.InvalidFileException):
-            continue
-    return CLAUDE_BUNDLE
+    if m:
+        app = m.group(1)
+        inner = re.search(r"\(([^)]+)\)", app)  # „Claude (Praca)” → „Praca”
+        label, bundle = inner.group(1) if inner else app, CLAUDE_BUNDLE
+        for base in (Path("/Applications"), HOME / "Applications"):
+            try:
+                with open(base / (app + ".app") / "Contents" / "Info.plist", "rb") as f:
+                    bundle = plistlib.load(f).get("CFBundleIdentifier") or CLAUDE_BUNDLE
+                break
+            except (OSError, plistlib.InvalidFileException):
+                continue
+        result = (label, bundle)
+    _instances[pid] = result
+    return result
 
 
 def pid_alive(pid):
@@ -355,6 +379,7 @@ def claude_sessions():
             "source": "desktop" if d.get("entrypoint") == "claude-desktop" else "cli",
             "url": claude_url(d),
             "pid": pid,
+            "instance": claude_instance(pid)[0],
             "cost": claude_cost(sid, tpath),
         })
     return out
@@ -457,6 +482,13 @@ def money(value):
     return float(m.group(1).replace(",", "")) if m else None
 
 
+def tokens(value):
+    m = re.search(r"([\d.,]+)\s*([KMB])?\s*tokens", value or "")
+    if not m:
+        return None
+    return float(m.group(1).replace(",", "")) * {"K": 1e3, "M": 1e6, "B": 1e9}.get(m.group(2), 1)
+
+
 def parse_provider(p, kind):
     lines = {l.get("label"): l for l in p.get("lines") or []}
 
@@ -470,10 +502,13 @@ def parse_provider(p, kind):
     plan = p.get("plan") or ""
     price = PLAN_PRICES.get(kind, {}).get(plan.lower())
     month = money((lines.get("Last 30 Days") or {}).get("value"))
+    trend = (lines.get("Usage Trend") or {}).get("points") or []
     return {
         "plan": plan,
         "session": bar("Session"),
         "weekly": bar("Weekly"),
+        "trend": [{"label": t.get("label"), "value": t.get("value") or 0} for t in trend[-14:]],
+        "todayTokens": tokens((lines.get("Today") or {}).get("value")),
         "today": money((lines.get("Today") or {}).get("value")),
         "month": month,
         "multiple": round(month / price, 1) if month is not None and price else None,
@@ -492,10 +527,151 @@ def usage():
             pid = p.get("providerId")
             if pid in ("claude", "codex"):
                 data[pid] = parse_provider(p, pid)
+                for kind in ("session", "weekly"):
+                    bar = data[pid][kind]
+                    if bar:
+                        record_usage("%s:%s" % (pid, kind), bar)
+                        bar["forecast"] = forecast("%s:%s" % (pid, kind), kind, bar)
+        save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
     except Exception as exc:  # OpenUsage wyłączony / zmiana API
         _usage_cache.update(at=time.time(), error="OpenUsage niedostępny (%s)" % exc.__class__.__name__)
     return _usage_cache
+
+
+# ---------- prognoza limitu ----------
+
+# Z jakiego okna liczymy tempo i ile danych musi być, żeby prognoza miała sens.
+FORECAST = {"session": (45 * 60e3, 10 * 60e3), "weekly": (24 * 3600e3, 3 * 3600e3)}
+
+try:
+    _history = json.loads(USAGE_HISTORY.read_text())
+except (OSError, ValueError):
+    _history = {}
+_history_saved = time.time()
+
+
+def record_usage(key, bar):
+    if bar.get("resetsAt") is None:
+        return
+    t, reset_min = now_ms(), bar["resetsAt"] // 60000
+    h = _history.setdefault(key, [])
+    if h and abs(h[-1][2] - reset_min) > 1:
+        h.clear()  # nowe okno limitu — stare tempo nie ma znaczenia
+    h.append([t, bar["pct"], reset_min])
+    keep = FORECAST[key.split(":")[1]][0]
+    _history[key] = [x for x in h if x[0] >= t - keep]
+
+
+def save_history():
+    global _history_saved
+    if time.time() - _history_saved < 300:
+        return
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        USAGE_HISTORY.write_text(json.dumps(_history))
+        _history_saved = time.time()
+    except OSError:
+        pass
+
+
+def forecast(key, kind, bar):
+    """Kiedy przy obecnym tempie skończy się limit. None = za mało danych."""
+    if bar["pct"] >= 100:
+        return {"exhausted": True}
+    pts = _history.get(key) or []
+    if len(pts) < 2 or pts[-1][0] - pts[0][0] < FORECAST[kind][1]:
+        return None
+    rate = (pts[-1][1] - pts[0][1]) / float(pts[-1][0] - pts[0][0])  # % na ms
+    if rate <= 0:
+        return {"eta": None, "beforeReset": False}
+    eta = int(now_ms() + (100 - bar["pct"]) / rate)
+    return {"eta": eta, "beforeReset": bool(bar.get("resetsAt")) and eta < bar["resetsAt"]}
+
+
+# ---------- dane odświeżane w tle (GitHub, statusy) ----------
+
+class Poller(threading.Thread):
+    """Odpytuje wolne źródło co `interval` s; przy błędzie trzyma ostatni dobry wynik."""
+
+    def __init__(self, fn, interval):
+        super().__init__(daemon=True)
+        self.fn, self.interval = fn, interval
+        self.value, self.error, self.at = None, None, 0
+
+    def run(self):
+        while True:
+            try:
+                self.value, self.error, self.at = self.fn(), None, time.time()
+            except Exception as exc:
+                self.error = "%s: %s" % (exc.__class__.__name__, exc)
+            time.sleep(self.interval)
+
+    def snapshot(self):
+        stale = time.time() - self.at > 3 * self.interval
+        return {"data": self.value, "error": self.error if (self.value is None or stale) else None}
+
+
+GH_QUERY = """
+query {
+  viewer { pullRequests(states: OPEN, first: 20, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { ...pr } } }
+  review: search(query: "is:open is:pr review-requested:@me archived:false", type: ISSUE, first: 10) {
+    nodes { ... on PullRequest { ...pr } }
+  }
+}
+fragment pr on PullRequest {
+  number title url isDraft reviewDecision updatedAt
+  repository { name }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+}
+"""
+
+
+def github_prs():
+    if not GH:
+        raise RuntimeError("brak gh")
+    r = subprocess.run([GH, "api", "graphql", "-f", "query=" + GH_QUERY],
+                       capture_output=True, text=True, timeout=30)
+    if r.returncode:
+        raise RuntimeError((r.stderr or "gh error").strip()[:200])
+    d = json.loads(r.stdout)["data"]
+
+    def pr(n, review):
+        commits = (n.get("commits") or {}).get("nodes") or [{}]
+        rollup = ((commits[-1].get("commit") or {}).get("statusCheckRollup") or {}).get("state")
+        return {
+            "url": n["url"], "number": n["number"], "title": n["title"], "repo": n["repository"]["name"],
+            "draft": n.get("isDraft"), "review": review, "decision": n.get("reviewDecision"),
+            "ci": rollup.lower() if rollup else None, "updated": iso_to_ms(n.get("updatedAt")),
+        }
+
+    out, seen = [], set()
+    for n, review in [(n, True) for n in d["review"]["nodes"]] + [(n, False) for n in d["viewer"]["pullRequests"]["nodes"]]:
+        if n and n.get("url") and n["url"] not in seen:
+            seen.add(n["url"])
+            out.append(pr(n, review))
+    return out
+
+
+def service_status():
+    out = {}
+    for tool, url in STATUS_PAGES.items():
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ai-panel"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                d = json.load(r)
+            st = d.get("status") or {}
+            open_incidents = [i.get("name") for i in d.get("incidents") or []
+                              if i.get("status") not in ("resolved", "postmortem")]
+            out[tool] = {"indicator": st.get("indicator") or "none", "description": st.get("description"),
+                         "incident": open_incidents[0] if open_incidents else None}
+        except Exception:
+            out[tool] = {"indicator": "unknown", "description": "Brak danych o statusie"}
+    return out
+
+
+_github = Poller(github_prs, SLOW_POLL)
+_status = Poller(service_status, SLOW_POLL)
 
 
 # ---------- kalendarz ----------
@@ -546,6 +722,8 @@ def state():
         "usageError": u.get("error"),
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),
+        "github": _github.snapshot(),
+        "status": _status.snapshot()["data"] or {},
     }
 
 
@@ -560,8 +738,29 @@ def open_session(tool, sid):
     cmd = ["/usr/bin/open"]
     if tool == "claude":
         # Obie instancje Claude rejestrują claude://, więc wskazujemy właściwą wprost.
-        cmd += ["-b", claude_bundle(session["pid"])]
+        cmd += ["-b", claude_instance(session["pid"])[1]]
     subprocess.run(cmd + [session["url"]], check=False, timeout=5)
+    return True
+
+
+def open_target(body):
+    """Klient podaje tylko, CO otworzyć; adres zawsze pochodzi z danych serwera."""
+    kind = body.get("kind", "session")
+    url = None
+    if kind == "session":
+        return open_session(str(body.get("tool")), str(body.get("id")))
+    if kind == "pr":
+        want = str(body.get("url"))
+        if GH_PR.match(want) and any(p["url"] == want for p in _github.value or []):
+            url = want
+    elif kind == "event":
+        ev = next((e for e in calendar().get("events", [])
+                   if e.get("start") == body.get("start") and e.get("title") == body.get("title")), None)
+        if ev and str(ev.get("link", "")).startswith("https://"):
+            url = ev["link"]
+    if not url:
+        return False
+    subprocess.run(["/usr/bin/open", url], check=False, timeout=5)
     return True
 
 
@@ -592,7 +791,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(404, b"not found", "text/plain")
         try:
             body = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 4096)))
-            ok = open_session(str(body.get("tool")), str(body.get("id")))
+            ok = open_target(body)
         except (ValueError, AttributeError):
             return self.send(400, b"bad request", "text/plain")
         self.send(200 if ok else 404, json.dumps({"ok": ok}).encode(), "application/json")
@@ -615,4 +814,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print("AI Panel: http://127.0.0.1:%d" % PORT, flush=True)
+    _github.start()
+    _status.start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
