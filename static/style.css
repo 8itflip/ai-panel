@@ -358,3 +358,10 @@ h2 {
   .prs { max-height: 48%; }
   .time { font-size: 4.6rem; }
 }
+
+/* ---------- data format warning ---------- */
+.health {
+  font-size: 0.78rem; font-weight: 650; color: var(--wait-ink); background: var(--warn);
+  border-radius: 1rem; padding: 0.05rem 0.55rem; white-space: nowrap;
+}
+.health:empty { display: none; }

@@ -30,6 +30,10 @@ Statusy:
 - **Pracuje**: Claude `status: busy`; Codex: ostatnie zdarzenie to `task_started`.
 - **Gotowe** / **Przerwane**: tura zakończona / przerwana.
 
+Claude Code i Codex zapisują sesje w nieudokumentowanych formatach. Gdy po aktualizacji dane przestaną
+pasować (brak pól, kolumn w bazie albo znanych zdarzeń), kolumna pokazuje „zmienił się format danych”
+ze szczegółem, zamiast po cichu zostać pusta.
+
 „Aktywne” sesje Claude to te z żywym procesem. Codex trzyma wszystkie wątki w jednym procesie,
 więc dla niego aktywne = ruch w ciągu ostatnich 24 h (`CODEX_ACTIVE_HOURS` w `server.py`).
 
