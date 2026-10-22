@@ -63,4 +63,8 @@ właściciele na GitHubie (konto lub organizacja) i/lub host GitLaba. Merge requ
 zalogowanego `glab`: `glab auth login --hostname <host>`. PR-y innych właścicieli trafiają do „Inne”.
 Po zmianie pliku zrestartuj serwer.
 
+Testy (bez zależności; test interfejsu używa Chrome bez okna, jeśli jest zainstalowany):
+`python3 -m unittest discover -s tests` i `node --test tests/i18n.test.mjs`. GitHub Actions uruchamia je
+przy każdym pushu.
+
 Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.
