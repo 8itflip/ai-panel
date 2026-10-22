@@ -83,10 +83,11 @@ function renderUsage(col, usage, error) {
     : `<div class="na">${esc(error || "Brak danych o limitach")}</div>`;
 }
 
-function sessionRow(s) {
+function sessionRow(s, tool) {
   const label = s.state === "waiting" && s.detail === "pytanie" ? "Pytanie do Ciebie" : LABEL[s.state] || s.state;
   const tip = s.detail && s.detail !== "pytanie" ? ` title="${esc(s.detail)}"` : "";
-  return `<li class="s ${s.state}"${tip}>
+  const open = s.url ? ` data-tool="${tool}" data-id="${esc(s.id)}"` : "";
+  return `<li class="s ${s.state}"${tip}${open}>
     <span class="ic">${ICON[s.state] || ""}</span>
     <div class="main">
       <div class="name"><span class="n">${esc(s.name)}</span><span class="proj">${esc(s.project)}</span></div>
@@ -122,7 +123,7 @@ function renderTool(key, data, usageError) {
   sigs[key] = sig;
   const ul = $(".sessions", col);
   ul.innerHTML = sessions.length
-    ? sessions.map(sessionRow).join("")
+    ? sessions.map((s) => sessionRow(s, key)).join("")
     : `<li class="col-empty">Brak aktywnych sesji</li>`;
   if (data.error) ul.insertAdjacentHTML("afterbegin", `<li class="col-err">${esc(data.error)}</li>`);
   fitList(ul);
@@ -215,6 +216,22 @@ async function poll() {
   conn.classList.toggle("bad", stale);
   conn.textContent = stale ? "brak połączenia z serwerem" : "";
 }
+
+/* ---------- otwieranie sesji w aplikacji ---------- */
+
+document.addEventListener("click", async (ev) => {
+  const row = ev.target.closest(".s[data-id]");
+  if (!row) return;
+  row.classList.add("opening");
+  setTimeout(() => row.classList.remove("opening"), 900);
+  try {
+    await fetch("/api/open", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool: row.dataset.tool, id: row.dataset.id }),
+    });
+  } catch (e) { /* serwer niedostępny — nic nie robimy */ }
+});
 
 /* ---------- motyw ---------- */
 
