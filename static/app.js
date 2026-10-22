@@ -41,6 +41,14 @@ function until(ms) {
   return `za ${d} ${plural(d, "dzień", "dni", "dni")}`;
 }
 
+function chatCost(c) {
+  // Orientacyjny koszt czatu po cenach API; „+” = część odpowiedzi bez znanej ceny modelu.
+  if (!c) return "";
+  const x = c.usd, digits = x < 10 ? 2 : x < 100 ? 1 : 0;
+  const n = x.toLocaleString("pl-PL", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return `≈ $${n}${c.partial ? "+" : ""}`;
+}
+
 function usd(x) {
   return "$" + Math.round(x).toLocaleString("pl-PL");
 }
@@ -95,7 +103,7 @@ function sessionRow(s, tool) {
     </div>
     <div class="right">
       <div class="lbl">${label}</div>
-      <div class="when" data-ago="${s.time || Date.now()}"></div>
+      <div class="when"><span class="usd" data-cost="${esc(s.id)}">${chatCost(s.cost)}</span><span data-ago="${s.time || Date.now()}"></span></div>
     </div>
   </li>`;
 }
@@ -114,12 +122,20 @@ function fitList(ul) {
   }
 }
 
+function updateCosts(col, sessions) {
+  const byId = new Map(sessions.map((s) => [s.id, s.cost]));
+  col.querySelectorAll("[data-cost]").forEach((el) => {
+    const text = chatCost(byId.get(el.dataset.cost));
+    if (el.textContent !== text) el.textContent = text;
+  });
+}
+
 function renderTool(key, data, usageError) {
   const col = $(`.col[data-tool="${key}"]`);
   renderUsage(col, data.usage, usageError);
   const sessions = [...data.sessions].sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || (b.time - a.time));
   const sig = JSON.stringify([sessions.map((s) => [s.id, s.state, s.name, s.project, s.message, s.detail]), data.error]);
-  if (sigs[key] === sig) return; // bez zmian — nie restartujemy animacji
+  if (sigs[key] === sig) return updateCosts(col, sessions); // bez zmian — nie restartujemy animacji
   sigs[key] = sig;
   const ul = $(".sessions", col);
   ul.innerHTML = sessions.length

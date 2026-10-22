@@ -26,6 +26,8 @@ CLAUDE_PROJECTS = HOME / ".claude" / "projects"
 CODEX_HOME = HOME / ".codex"
 OPENUSAGE_URL = "http://127.0.0.1:6736/v1/usage"
 CALENDAR_JSON = HOME / "Library" / "Caches" / "ai-panel" / "calendar.json"
+# Cennik modeli z OpenUsage (USD za 1M tokenów) — ten sam, z którego liczone są sumy w nagłówkach.
+PRICING_DIR = HOME / "Library" / "Application Support" / "OpenUsage" / "pricing"
 
 # Codex nie ma procesu na wątek, więc „aktywny” = ruch w ciągu ostatnich N godzin.
 CODEX_ACTIVE_HOURS = 24
@@ -123,6 +125,117 @@ _parse_cache = FileCache()
 _transcript_paths = {}
 
 
+# ---------- koszt czatu ----------
+
+class Pricing:
+    """Ceny z cache OpenUsage: i/o = wejście/wyjście, cr/cw = odczyt/zapis cache, fast = mnożnik."""
+
+    def __init__(self):
+        self.loaded_at = 0
+        self.tables = []
+
+    def get(self, model):
+        if time.time() - self.loaded_at > 3600:
+            self.tables = []
+            for name in ("litellm.json", "models_dev.json"):
+                try:
+                    self.tables.append(json.loads((PRICING_DIR / name).read_text())["models"])
+                except (OSError, ValueError, KeyError):
+                    pass
+            self.loaded_at = time.time()
+        base = re.sub(r"-\d{8}$", "", model or "")
+        for table in self.tables:
+            for key in (model, base, "anthropic/" + base, "openai/" + base):
+                if key in table:
+                    return table[key]
+        return None
+
+
+_pricing = Pricing()
+
+
+class Tally:
+    """Narastający koszt jednego pliku JSONL; czytamy tylko to, co dopisano od ostatniego razy."""
+
+    def __init__(self, ino):
+        self.ino, self.offset, self.rest = ino, 0, b""
+        self.cost, self.unpriced, self.seen, self.model = 0.0, 0, set(), None
+
+
+_tallies = {}
+
+
+def tally(path, consume, markers):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    t = _tallies.get(path)
+    if t is None or t.ino != st.st_ino or st.st_size < t.offset:
+        t = _tallies[path] = Tally(st.st_ino)
+    if st.st_size > t.offset:
+        with open(path, "rb") as f:
+            f.seek(t.offset)
+            chunk = t.rest + f.read(st.st_size - t.offset)
+        t.offset = st.st_size
+        lines = chunk.split(b"\n")
+        t.rest = lines.pop()  # niedokończona ostatnia linia — dokończymy przy następnym odczycie
+        for raw in lines:
+            if any(m in raw for m in markers):
+                try:
+                    consume(t, json.loads(raw))
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    pass
+    return t
+
+
+def consume_claude(t, e):
+    if e.get("type") != "assistant":
+        return
+    msg = e.get("message") or {}
+    u, model = msg.get("usage"), msg.get("model")
+    key = msg.get("id") or e.get("requestId")
+    if not u or not model or model.startswith("<") or key in t.seen:
+        return
+    t.seen.add(key)  # Claude Code zapisuje jedną odpowiedź w kilku liniach z tym samym usage
+    p = _pricing.get(model)
+    if not p:
+        t.unpriced += 1
+        return
+    cc = u.get("cache_creation") or {}
+    write_1h = cc.get("ephemeral_1h_input_tokens") or 0
+    write_5m = cc.get("ephemeral_5m_input_tokens", (u.get("cache_creation_input_tokens") or 0) - write_1h)
+    usd = ((u.get("input_tokens") or 0) * p["i"] + (u.get("output_tokens") or 0) * p["o"]
+           + (u.get("cache_read_input_tokens") or 0) * p.get("cr", p["i"])
+           + write_5m * p.get("cw", p["i"]) + write_1h * 2 * p["i"]) / 1e6
+    t.cost += usd * (p.get("fast", 1) if u.get("speed") == "fast" else 1)
+
+
+def consume_codex(t, e):
+    p_ = e.get("payload") or {}
+    if e.get("type") == "turn_context":
+        t.model = p_.get("model") or t.model
+        return
+    if e.get("type") != "token_usage_record" or p_.get("response_id") in t.seen:
+        return
+    t.seen.add(p_.get("response_id"))
+    u, p = p_.get("usage") or {}, _pricing.get(t.model)
+    if not p:
+        t.unpriced += 1
+        return
+    cached, written = u.get("cached_input_tokens") or 0, u.get("cache_write_input_tokens") or 0
+    fresh = max(0, (u.get("input_tokens") or 0) - cached - written)  # input_tokens zawiera cache
+    t.cost += (fresh * p["i"] + cached * p.get("cr", p["i"]) + written * p.get("cw", p["i"])
+               + (u.get("output_tokens") or 0) * p["o"]) / 1e6
+
+
+def cost_of(tallies):
+    tallies = [t for t in tallies if t]
+    if not tallies:
+        return None
+    return {"usd": round(sum(t.cost for t in tallies), 2), "partial": any(t.unpriced for t in tallies)}
+
+
 # ---------- Claude Code ----------
 
 def claude_url(d):
@@ -198,6 +311,12 @@ def parse_claude_transcript(path):
     return {"title": title, "message": message}
 
 
+def claude_cost(sid, tpath):
+    markers = (b'"usage"',)
+    files = [tpath] + [str(p) for p in Path(tpath).parent.joinpath(sid, "subagents").glob("*.jsonl")]
+    return cost_of(tally(f, consume_claude, markers) for f in files)
+
+
 def claude_sessions():
     out = []
     for f in CLAUDE_SESSIONS.glob("*.json"):
@@ -236,6 +355,7 @@ def claude_sessions():
             "source": "desktop" if d.get("entrypoint") == "claude-desktop" else "cli",
             "url": claude_url(d),
             "pid": pid,
+            "cost": claude_cost(sid, tpath),
         })
     return out
 
@@ -311,6 +431,7 @@ def codex_sessions():
             "time": parsed.get("at") or recent,
             "source": "codex",
             "url": "codex://threads/" + tid if UUID.match(tid or "") else None,
+            "cost": cost_of([tally(rollout, consume_codex, (b'"token_usage_record"', b'"turn_context"'))]),
         })
     return out
 
