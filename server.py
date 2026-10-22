@@ -17,6 +17,7 @@ HOME = Path.home()
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 PORT = int(os.environ.get("AI_PANEL_PORT", "7319"))
+ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 CLAUDE_SESSIONS = HOME / ".claude" / "sessions"
 CLAUDE_PROJECTS = HOME / ".claude" / "projects"
@@ -370,6 +371,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        # Ochrona przed DNS rebinding: obca strona nie może czytać API pod własną domeną.
+        if self.headers.get("Host") not in ALLOWED_HOSTS:
+            return self.send(421, b"misdirected request", "text/plain")
         path = self.path.split("?", 1)[0]
         if path == "/api/state":
             return self.send(200, json.dumps(state(), ensure_ascii=False).encode(), "application/json")
