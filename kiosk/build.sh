@@ -21,6 +21,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<string>APPL</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppSleepDisabled</key>
+	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

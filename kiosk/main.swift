@@ -57,15 +57,72 @@ struct Config {
     }
 }
 
+/// Hosts the web view and tells the page where the cursor is. WebKit ignores mouse movement while
+/// its app is inactive, and the kiosk app always is, so hover effects only caught up on the next
+/// layout. The page's window.__pointer(x, y) marks the elements under the cursor instead. The window
+/// never becomes key, so the keyboard stays with whatever app the user is typing in.
+final class HoverHost: NSView {
+    let web: WKWebView
+    private var inFlight = false
+    private var pending: CGPoint?
+
+    init(web: WKWebView) {
+        self.web = web
+        super.init(frame: .zero)
+        web.autoresizingMask = [.width, .height]
+        addSubview(web)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        web.frame = bounds
+    }
+
+    override func updateTrackingAreas() {
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
+        super.updateTrackingAreas()
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let p = convert(event.locationInWindow, from: nil)
+        send(CGPoint(x: p.x, y: bounds.height - p.y))  // page coordinates start at the top
+    }
+
+    override func mouseExited(with event: NSEvent) { send(CGPoint(x: -1, y: -1)) }
+
+    /// One evaluation at a time; positions that arrive meanwhile collapse into the latest one.
+    private func send(_ point: CGPoint) {
+        guard !inFlight else { pending = point; return }
+        inFlight = true
+        web.evaluateJavaScript("window.__pointer && window.__pointer(\(point.x), \(point.y))") { [weak self] _, _ in
+            guard let self = self else { return }
+            self.inFlight = false
+            if let next = self.pending {
+                self.pending = nil
+                self.send(next)
+            }
+        }
+    }
+}
+
 final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     let config: Config
     var window: NSWindow?
     var webView: WKWebView?
     var retry: Timer?
+    var activity: NSObjectProtocol?
 
     init(config: Config) { self.config = config }
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        // The kiosk is never the active app, so App Nap would throttle its timers and animations.
+        // This keeps it running at full speed but still lets the display and the system sleep.
+        activity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep, .latencyCritical], reason: "AI Panel kiosk display")
         NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
                                                name: NSApplication.didChangeScreenParametersNotification, object: nil)
         screensChanged()
@@ -100,11 +157,15 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
 
         let conf = WKWebViewConfiguration()
         conf.websiteDataStore = .default()  // keeps localStorage (theme, expanded groups) between runs
+        // WebKit throttles pages in inactive windows by default; the kiosk window is always inactive.
+        conf.preferences.inactiveSchedulingPolicy = .none
         let web = WKWebView(frame: .zero, configuration: conf)
         web.navigationDelegate = self
         web.allowsMagnification = false
         web.setValue(false, forKey: "drawsBackground")
-        win.contentView = web
+        let host = HoverHost(web: web)
+        win.contentView = host
+        win.acceptsMouseMovedEvents = true
         web.load(URLRequest(url: config.pageURL))
 
         window = win
