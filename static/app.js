@@ -1,7 +1,7 @@
 "use strict";
 
 const POLL_MS = 3000;
-const MEETING_LEAD_MIN = 10; // od kiedy pokazać pasek „Za X min — Dołącz”
+const MEETING_LEAD_MIN = 10; // minutes before a meeting to show the "In X min · Join" bar
 const ORDER = { waiting: 0, working: 1, done: 2, aborted: 3 };
 const ICON = {
   waiting: '<span class="dot"></span>',
@@ -37,13 +37,13 @@ function duration(ms) {
 const until = (ms) => t("in", { t: duration(ms) });
 
 function dayTime(ms) {
-  // „17:42” dziś, „Fri 9:15” w inne dni
+  // "17:42" today, "Fri 9:15" on other days
   const d = new Date(ms);
   return d.toDateString() === new Date().toDateString() ? hm(ms) : `${d.toLocaleDateString(LOCALE, { weekday: "short" })} ${hm(ms)}`;
 }
 
 function chatCost(c) {
-  // Koszt czatu po cenach API; „+” = część odpowiedzi bez znanej ceny modelu.
+  // Chat cost at API prices; "+" means some responses used a model without a known price.
   if (!c) return "";
   const x = c.usd, digits = x < 10 ? 2 : x < 100 ? 1 : 0;
   const n = x.toLocaleString(LOCALE, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -69,10 +69,10 @@ function tokensLabel(n) {
   return String(Math.round(n));
 }
 
-/* ---------- zegar i odliczania ---------- */
+/* ---------- clock and countdowns ---------- */
 
 function fillTimes(root = document) {
-  // Wypełniane od razu przy rysowaniu: puste pola zmieniłyby później wysokość i rozjechały dopasowanie list.
+  // Filled in while rendering: empty fields would change height later and break the list fitting.
   root.querySelectorAll("[data-ago]").forEach((el) => { el.textContent = ago(+el.dataset.ago); });
   root.querySelectorAll("[data-until]").forEach((el) => {
     el.textContent = t(el.dataset.fmt || "reset", { until: until(+el.dataset.until) });
@@ -86,17 +86,17 @@ function tickClock() {
   fillTimes();
 }
 
-/* ---------- nagłówki kolumn: limity, prognoza, trend, status ---------- */
+/* ---------- column headers: limits, forecast, trend, status ---------- */
 
 function forecastNote(bar) {
-  // Tylko gdy przy obecnym tempie limit skończy się przed resetem — inaczej to szum.
+  // Only when the current pace runs out before the reset; otherwise it is noise.
   const f = bar.forecast;
   return f?.beforeReset ? `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>` : "";
 }
 
 function meter(label, bar) {
   if (!bar) return "";
-  // Pokazujemy, ile ZOSTAŁO: liczba i wypełnienie paska maleją w miarę zużycia.
+  // Shows what is LEFT: the number and the filled bar shrink as usage grows.
   const left = Math.max(0, 100 - bar.pct);
   const out = bar.forecast?.exhausted || left === 0;
   const warn = bar.forecast?.beforeReset;
@@ -122,7 +122,7 @@ function trend(points) {
 }
 
 function limitBanner(usage) {
-  // Wyczerpany limit to najważniejsza informacja w kolumnie — pasek nad listą sesji.
+  // An exhausted limit is the most important fact in the column: a bar above the sessions.
   for (const kind of ["session", "weekly"]) {
     const bar = usage?.[kind];
     if (bar?.forecast?.exhausted) {
@@ -154,7 +154,7 @@ function renderUsage(col, usage, error) {
   } else {
     cost.textContent = "";
   }
-  // Prawdziwe pieniądze ponad abonament; ostrzeżenie przy 80% limitu extra usage albo saldzie < $5.
+  // Real money on top of the subscription; warn at 80% of the extra usage limit or a balance under $5.
   const spend = $(".spend", col);
   const extra = usage?.extra, credits = usage?.credits;
   if (extra) {
@@ -174,7 +174,7 @@ function renderUsage(col, usage, error) {
   fillTimes(col.querySelector(".banner"));
 }
 
-/* ---------- listy sesji ---------- */
+/* ---------- session lists ---------- */
 
 function sessionRow(s, tool) {
   const label = t(s.state === "waiting" && s.detail === "question" ? "state.question" : `state.${s.state}`);
@@ -195,7 +195,7 @@ function sessionRow(s, tool) {
 }
 
 function fitList(ul, rowSel, moreKey) {
-  // Ukryj nadmiar wierszy od dołu i pokaż „+N”.
+  // Hide overflowing rows from the bottom and show "+N".
   let hidden = 0;
   let more = null;
   while (ul.scrollHeight > ul.clientHeight + 1) {
@@ -226,7 +226,7 @@ function renderTool(key, data, usageError, status) {
     ? t("stale", { n: stale.length, mem: bytes(stale.reduce((m, s) => m + (s.memory || 0), 0)) }) : "";
   const sig = JSON.stringify([sessions.map((s) => [s.id, s.state, s.name, s.project, s.message, s.detail, s.instance, s.stale]), data.error]);
   const ul = $(".sessions", col);
-  // Bez zmian i nadal się mieści — nie przebudowujemy listy (animacje się nie restartują).
+  // Unchanged and still fits: keep the list as is so animations do not restart.
   if (sigs[key] === sig && ul.dataset.h === String(ul.clientHeight)) return updateCosts(col, sessions);
   sigs[key] = sig;
   ul.innerHTML = sessions.length
@@ -238,7 +238,7 @@ function renderTool(key, data, usageError, status) {
   ul.dataset.h = String(ul.clientHeight);
 }
 
-/* ---------- podsumowanie ---------- */
+/* ---------- summary ---------- */
 
 function renderSummary(all, claudeUsage, codexUsage) {
   const count = (st) => all.filter((s) => s.state === st).length;
@@ -252,7 +252,7 @@ function renderSummary(all, claudeUsage, codexUsage) {
   h.classList.toggle("alert", w > 0);
   h.textContent = w > 0 ? t("headline.waiting", { n: w }) : k > 0 ? t("headline.working", { n: k }) : t("headline.idle");
 
-  // Dziś: sesje z ruchem od północy + koszt i tokeny z OpenUsage (oba narzędzia).
+  // Today: sessions active since midnight plus cost and tokens from OpenUsage (both tools).
   const midnight = new Date().setHours(0, 0, 0, 0);
   const today = all.filter((s) => s.time >= midnight).length;
   const cost = (claudeUsage?.today || 0) + (codexUsage?.today || 0);
@@ -262,7 +262,7 @@ function renderSummary(all, claudeUsage, codexUsage) {
   $("#today").innerHTML = `<span>${t("today")}</span> ${parts.join(" · ")}`;
 }
 
-/* ---------- kalendarz i najbliższe spotkanie ---------- */
+/* ---------- calendar and next meeting ---------- */
 
 const CAL_ERRORS = ["no_helper", "no_access", "stale"];
 
@@ -308,7 +308,7 @@ function renderCalendar(cal) {
     const day = e.start <= now ? today : dayLabel(e.start);
     if (day !== lastDay) { if (lastDay !== null || day !== today) html += `<li class="day">${esc(day)}</li>`; lastDay = day; }
     const mins = (e.start - now) / 60000;
-    let cls = "later", when = ""; // godzina jest już w opisie pod tytułem
+    let cls = "later", when = ""; // the time is already in the line under the title
     if (e.start <= now) { cls = "now"; when = t("cal.ongoing", { time: hm(e.end) }); }
     else if (mins <= 15) { cls = "soon"; when = t("in", { t: t("dur.min", { m: Math.max(1, Math.round(mins)) }) }); }
     else if (mins < 180) { cls = "next"; when = until(e.start); }
@@ -324,12 +324,12 @@ function renderCalendar(cal) {
   if (ul.lastElementChild?.classList.contains("day")) ul.lastElementChild.remove();
 }
 
-/* ---------- pull requesty ---------- */
+/* ---------- pull requests ---------- */
 
 const CI = { success: "ci.success", failure: "ci.failure", error: "ci.error", pending: "ci.pending", expected: "ci.pending" };
 
 function prRank(p) {
-  if (p.review) return 0; // ktoś czeka na Twoje review
+  if (p.review) return 0; // someone is waiting for your review
   if (p.ci === "failure" || p.ci === "error" || p.decision === "CHANGES_REQUESTED") return 1;
   if (p.decision === "APPROVED") return 2;
   return p.draft ? 4 : 3;
@@ -355,8 +355,8 @@ function prGroupMessage(g) {
 }
 
 function fitGroups(ul) {
-  // Za mało miejsca: ucinamy z grupy, która ma najwięcej widocznych wierszy. Gdy nawet po jednym
-  // wierszu na grupę się nie mieści, grupa zostaje z samym „+N więcej” — nic nie jest ucięte w połowie.
+  // Not enough room: trim the group with the most visible rows. If even one row per group does not
+  // fit, a group keeps only its "+N more" line, so nothing is cut in half.
   const hidden = {};
   while (ul.scrollHeight > ul.clientHeight + 1) {
     const counts = {};
@@ -373,8 +373,8 @@ function fitGroups(ul) {
   }
 }
 
-/* Rozwinięcie grup PR-ów: wybór użytkownika z localStorage, a bez wyboru — rozwinięte tylko te,
-   które wymagają uwagi (czeka Twoje review albo CI nie przeszło). */
+/* Expanded PR groups: the choice saved in localStorage, otherwise only groups that need attention
+   (a review requested from you or failing CI). */
 let prOpen = {};
 try { prOpen = JSON.parse(localStorage.getItem("prOpen") || "{}"); } catch (e) {}
 
@@ -430,7 +430,7 @@ function renderPRs(groups) {
   fitGroups(ul);
 }
 
-/* ---------- lokalne zmiany w repozytoriach sesji ---------- */
+/* ---------- local changes in session repositories ---------- */
 
 function renderLocal(local) {
   const ul = $("#local");
@@ -438,7 +438,7 @@ function renderLocal(local) {
   const sig = JSON.stringify([repos, prOpen.__local]);
   if (sigs.local === sig) return;
   sigs.local = sig;
-  if (!repos.length) { ul.innerHTML = ""; return; } // nic do pokazania — sekcja znika
+  if (!repos.length) { ul.innerHTML = ""; return; } // nothing to show, so the section disappears
   const open = !!prOpen.__local;
   const files = repos.reduce((n, r) => n + r.files, 0), ahead = repos.reduce((n, r) => n + (r.ahead || 0), 0);
   const sum = [`<b>${esc(t("local.repos", { n: repos.length }))}</b>`, files && esc(t("local.files", { n: files })),
@@ -455,7 +455,7 @@ function renderLocal(local) {
   ul.innerHTML = html;
 }
 
-/* ---------- pętla ---------- */
+/* ---------- main loop ---------- */
 
 function render() {
   if (!last) return;
@@ -464,7 +464,7 @@ function render() {
   renderTool("codex", last.codex, last.usageError, st.codex);
   renderSummary([...last.claude.sessions, ...last.codex.sessions], last.claude.usage, last.codex.usage);
   renderLocal(last.local);
-  renderPRs(last.prs); // najpierw PR-y i zmiany: kalendarz dopasowuje się do miejsca, które zostanie
+  renderPRs(last.prs); // PRs and changes first: the calendar fits into whatever space is left
   renderCalendar(last.calendar || {});
   tickClock();
 }
@@ -474,18 +474,18 @@ async function poll() {
     const r = await fetch("/api/state", { cache: "no-store" });
     if (!r.ok) throw new Error(r.status);
     const data = await r.json();
-    if (last && data.version !== last.version) return location.reload(); // nowa wersja strony
+    if (last && data.version !== last.version) return location.reload(); // a new version of the page
     last = data;
     lastOk = Date.now();
     render();
-  } catch (e) { /* zostaw ostatni stan */ }
+  } catch (e) { /* keep the last state */ }
   const conn = $("#conn");
   const stale = Date.now() - lastOk > POLL_MS * 4;
   conn.classList.toggle("bad", stale);
   conn.textContent = stale ? t("offline") : "";
 }
 
-/* ---------- otwieranie: sesje w aplikacji, PR-y i spotkania w przeglądarce ---------- */
+/* ---------- opening: sessions in their app, PRs and meetings in the browser ---------- */
 
 document.addEventListener("click", (ev) => {
   const group = ev.target.closest("[data-toggle]");
@@ -503,10 +503,10 @@ document.addEventListener("click", async (ev) => {
   setTimeout(() => el.classList.remove("opening"), 900);
   try {
     await fetch("/api/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  } catch (e) { /* serwer niedostępny — nic nie robimy */ }
+  } catch (e) { /* server unreachable, do nothing */ }
 });
 
-/* ---------- motyw ---------- */
+/* ---------- theme ---------- */
 
 const THEMES = ["auto", "light", "dark"];
 const THEME_ICON = { auto: "◐", light: "☀", dark: "☾" };

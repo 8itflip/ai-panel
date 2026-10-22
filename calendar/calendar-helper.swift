@@ -1,9 +1,9 @@
-// AI Panel — eksport najbliższych wydarzeń z aplikacji Kalendarz (EventKit) do JSON.
+// AI Panel — exports upcoming events from the Calendar app (EventKit) to JSON.
 //
-//   calendar-helper <plik.json>          działa w tle, odświeża co minutę i po każdej zmianie
-//   calendar-helper --once [plik.json]   jednorazowy zrzut (bez pliku → stdout)
+//   calendar-helper <file.json>          runs in the background, refreshes every minute and on changes
+//   calendar-helper --once [file.json]   one-off export (stdout without a file)
 //
-// Uruchamiany przez launchd, żeby zgoda na dostęp do kalendarza była przypisana do tego programu.
+// Started by launchd so that the Calendar permission belongs to this program.
 import EventKit
 import Foundation
 
@@ -66,7 +66,7 @@ func dump() {
         .prefix(30)
         .map { e -> [String: Any] in
             var o: [String: Any] = [
-                "title": e.title ?? "(bez tytułu)",
+                "title": e.title ?? "(no title)",
                 "start": ms(e.startDate),
                 "end": ms(e.endDate),
                 "allDay": e.isAllDay,

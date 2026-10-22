@@ -7,6 +7,6 @@
 	<key>CFBundleName</key>
 	<string>AI Panel Calendar</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>AI Panel pokazuje najbliższe spotkania na ekranie biurkowym.</string>
+	<string>AI Panel shows your upcoming meetings on a desk display.</string>
 </dict>
 </plist>

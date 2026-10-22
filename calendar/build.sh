@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kompiluje helper kalendarza z osadzonym Info.plist (wymagany do zgody na dostęp do Kalendarza).
+# Builds the calendar helper with an embedded Info.plist (required for the Calendar access prompt).
 set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p ../bin

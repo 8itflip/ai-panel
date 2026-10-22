@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""AI Panel — lokalny serwer dashboardu sesji Claude Code i Codex.
+"""AI Panel — local server for a Claude Code and Codex session dashboard.
 
-Czyta lokalne pliki (sesje Claude, baza Codexa, cache kalendarza) i API OpenUsage na localhost.
-Na zewnątrz tylko pobiera: publiczne strony statusu Anthropic/OpenAI i listę PR-ów przez `gh`.
-Nie wysyła żadnych danych z komputera.
+Reads local files (Claude sessions, the Codex database, the calendar cache) and the OpenUsage API on localhost.
+The only outbound requests fetch the public Anthropic/OpenAI status pages and pull requests via `gh`/`glab`.
+Nothing from this machine is sent anywhere.
 """
 import json
 import os
@@ -22,7 +22,7 @@ HOME = Path.home()
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 PORT = int(os.environ.get("AI_PANEL_PORT", "7319"))
-DEMO = os.environ.get("AI_PANEL_DEMO") == "1"  # fikcyjne dane (demo.py) do zrzutów ekranu
+DEMO = os.environ.get("AI_PANEL_DEMO") == "1"  # made-up data (demo.py) for screenshots
 ALLOWED_HOSTS = {"127.0.0.1:%d" % PORT, "localhost:%d" % PORT}
 
 CLAUDE_SESSIONS = HOME / ".claude" / "sessions"
@@ -30,53 +30,53 @@ CLAUDE_PROJECTS = HOME / ".claude" / "projects"
 CODEX_HOME = HOME / ".codex"
 OPENUSAGE_URL = "http://127.0.0.1:6736/v1/usage"
 CALENDAR_JSON = HOME / "Library" / "Caches" / "ai-panel" / "calendar.json"
-# Cennik modeli z OpenUsage (USD za 1M tokenów) — ten sam, z którego liczone są sumy w nagłówkach.
+# Model prices from OpenUsage's cache (USD per 1M tokens), the same ones behind the header totals.
 PRICING_DIR = HOME / "Library" / "Application Support" / "OpenUsage" / "pricing"
 
-# Codex nie ma procesu na wątek, więc „aktywny” = ruch w ciągu ostatnich N godzin.
+# Codex has no process per thread, so "active" means activity within the last N hours.
 CODEX_ACTIVE_HOURS = 24
 OPENUSAGE_TTL = 20  # s
 
-# Miesięczna cena abonamentu w USD, do przelicznika „ile razy abonament”.
+# Monthly plan price in USD, for the "N× subscription" figure.
 PLAN_PRICES = {
     "claude": {"pro": 20, "max": 100, "max 5x": 100, "max 20x": 200, "team": 30},
     "codex": {"plus": 20, "pro": 200, "business": 30, "team": 30},
 }
 
-# Linki otwierające sesję w aplikacji (sprawdzone na Claude 2.1 i ChatGPT/Codex).
+# Deep links that open a session in the app (verified with Claude 2.1 and ChatGPT/Codex).
 CLAUDE_DESKTOP_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 CLAUDE_BUNDLE = "com.anthropic.claudefordesktop"
-# Druga instancja Claude z Parall ma własne sesje; jej proces działa z „…/Application Support/Parall/<Nazwa>/claude-code/…”.
+# A second Claude instance made with Parall has its own sessions; its process runs from ".../Application Support/Parall/<Name>/claude-code/...".
 PARALL_EXE = re.compile(r"/Application Support/Parall/([^/]+)/claude-code/")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 CACHE_DIR = HOME / "Library" / "Caches" / "ai-panel"
 USAGE_HISTORY = CACHE_DIR / "usage-history.json"
-# launchd ma okrojony PATH, a gh/glab z Homebrew leżą poza nim.
+# launchd has a minimal PATH and Homebrew's gh/glab live outside it.
 _BIN_PATH = os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin"
 GH = shutil.which("gh", path=_BIN_PATH)
 GIT = shutil.which("git", path=_BIN_PATH)
 GLAB = shutil.which("glab", path=_BIN_PATH)
 
-# Lokalna konfiguracja (poza gitem), np. grupy PR-ów — wzór w config.example.json.
+# Local configuration (not in git), e.g. pull request groups; see config.example.json.
 CONFIG_FILE = ROOT / "config.json"
 try:
     CONFIG = json.loads(CONFIG_FILE.read_text())
 except (OSError, ValueError):
     CONFIG = {}
-# Bez konfiguracji: jedna grupa ze wszystkimi PR-ami z GitHuba.
+# Without configuration: one group with every GitHub pull request.
 PR_GROUPS = CONFIG.get("prGroups") or [{"name": None, "github": ["*"]}]
 STATUS_PAGES = {
     "claude": "https://status.claude.com/api/v2/summary.json",
     "codex": "https://status.openai.com/api/v2/summary.json",
 }
 SLOW_POLL = 120  # s — GitHub i strony statusu
-STALE_AFTER = 2 * 24 * 3600 * 1000  # ms bez ruchu — sesja Claude uznana za „starą”
+STALE_AFTER = 2 * 24 * 3600 * 1000  # ms without activity before a Claude session counts as idle
 
 STATIC_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
 
 
-# ---------- narzędzia ----------
+# ---------- helpers ----------
 
 def now_ms():
     return int(time.time() * 1000)
@@ -93,7 +93,7 @@ def iso_to_ms(s):
 
 
 def tail_lines(path, max_bytes=768 * 1024):
-    """Ostatnie linie pliku (bez wczytywania całego transkryptu)."""
+    """Last lines of a file, without reading the whole transcript."""
     with open(path, "rb") as f:
         f.seek(0, 2)
         size = f.tell()
@@ -107,7 +107,7 @@ def tail_lines(path, max_bytes=768 * 1024):
 
 _MD = [
     (re.compile(r"```.*?```", re.S), " "),
-    (re.compile(r":::\w*(\{[^}]*\})?"), " "),  # dyrektywy Codexa, np. :::writing{...}
+    (re.compile(r":::\w*(\{[^}]*\})?"), " "),  # Codex directives such as :::writing{...}
     (re.compile(r"`([^`]*)`"), r"\1"),
     (re.compile(r"\[([^\]]+)\]\([^)]+\)"), r"\1"),
     (re.compile(r"[*_#>]+"), ""),
@@ -129,7 +129,7 @@ def asks_question(text):
 
 
 class FileCache:
-    """Wynik parsowania pliku trzymany do zmiany mtime/rozmiaru."""
+    """Parsed result of a file, kept until its mtime or size changes."""
 
     def __init__(self):
         self.data = {}
@@ -152,10 +152,10 @@ _parse_cache = FileCache()
 _transcript_paths = {}
 
 
-# ---------- koszt czatu ----------
+# ---------- per-chat cost ----------
 
 class Pricing:
-    """Ceny z cache OpenUsage: i/o = wejście/wyjście, cr/cw = odczyt/zapis cache, fast = mnożnik."""
+    """Prices from the OpenUsage cache: i/o = input/output, cr/cw = cache read/write, fast = multiplier."""
 
     def __init__(self):
         self.loaded_at = 0
@@ -182,7 +182,7 @@ _pricing = Pricing()
 
 
 class Tally:
-    """Narastający koszt jednego pliku JSONL; czytamy tylko to, co dopisano od ostatniego razy."""
+    """Running cost of one JSONL file; only lines appended since the last read are parsed."""
 
     def __init__(self, ino):
         self.ino, self.offset, self.rest = ino, 0, b""
@@ -206,7 +206,7 @@ def tally(path, consume, markers):
             chunk = t.rest + f.read(st.st_size - t.offset)
         t.offset = st.st_size
         lines = chunk.split(b"\n")
-        t.rest = lines.pop()  # niedokończona ostatnia linia — dokończymy przy następnym odczycie
+        t.rest = lines.pop()  # incomplete last line, finished on the next read
         for raw in lines:
             if any(m in raw for m in markers):
                 try:
@@ -224,7 +224,7 @@ def consume_claude(t, e):
     key = msg.get("id") or e.get("requestId")
     if not u or not model or model.startswith("<") or key in t.seen:
         return
-    t.seen.add(key)  # Claude Code zapisuje jedną odpowiedź w kilku liniach z tym samym usage
+    t.seen.add(key)  # Claude Code writes one response as several lines with the same usage
     p = _pricing.get(model)
     if not p:
         t.unpriced += 1
@@ -251,7 +251,7 @@ def consume_codex(t, e):
         t.unpriced += 1
         return
     cached, written = u.get("cached_input_tokens") or 0, u.get("cache_write_input_tokens") or 0
-    fresh = max(0, (u.get("input_tokens") or 0) - cached - written)  # input_tokens zawiera cache
+    fresh = max(0, (u.get("input_tokens") or 0) - cached - written)  # input_tokens includes cached tokens
     t.cost += (fresh * p["i"] + cached * p.get("cr", p["i"]) + written * p.get("cw", p["i"])
                + (u.get("output_tokens") or 0) * p["o"]) / 1e6
 
@@ -270,7 +270,7 @@ def claude_url(d):
     if CLAUDE_DESKTOP_ID.match(host_id):
         return "claude://code/continue?session=" + host_id
     if UUID.match(sid):
-        return "claude://resume?session=" + sid  # sesja z terminala: aplikacja ją importuje
+        return "claude://resume?session=" + sid  # terminal session: the app imports it
     return None
 
 
@@ -278,19 +278,19 @@ _instances = {}
 
 
 def claude_instance(pid):
-    """(etykieta, bundle ID) aplikacji, do której należy sesja. Etykieta None = główny Claude."""
+    """(label, bundle ID) of the app that owns the session. A None label means the main Claude app."""
     if pid in _instances:
         return _instances[pid]
     try:
         exe = subprocess.run(["/bin/ps", "-o", "comm=", "-p", str(pid)],
                              capture_output=True, text=True, timeout=2).stdout
     except (OSError, subprocess.SubprocessError):
-        return None, CLAUDE_BUNDLE  # bez cache — spróbujemy następnym razem
+        return None, CLAUDE_BUNDLE  # not cached, try again next time
     result = (None, CLAUDE_BUNDLE)
     m = PARALL_EXE.search(exe)
     if m:
         app = m.group(1)
-        inner = re.search(r"\(([^)]+)\)", app)  # „Claude (Praca)” → „Praca”
+        inner = re.search(r"\(([^)]+)\)", app)  # "Claude (Work)" -> "Work"
         label, bundle = inner.group(1) if inner else app, CLAUDE_BUNDLE
         for base in (Path("/Applications"), HOME / "Applications"):
             try:
@@ -308,7 +308,7 @@ _mem = {"at": 0, "rss": {}, "children": {}, "memo": {}}
 
 
 def process_memory(pid):
-    """RSS procesu sesji razem z potomkami (serwery MCP, powłoki). Jedno wywołanie ps co 30 s."""
+    """RSS of a session process including its descendants (MCP servers, shells). One ps call every 30 s."""
     if time.time() - _mem["at"] > 30:
         try:
             out = subprocess.run(["/bin/ps", "-axo", "pid=,ppid=,rss="],
@@ -398,7 +398,7 @@ def claude_sessions():
         sid = d.get("sessionId")
         tpath = claude_transcript(sid) if sid else None
         if not tpath:
-            continue  # sesja bez żadnej wymiany — nic do pokazania
+            continue  # session without any exchange, nothing to show
         parsed = _parse_cache.get(tpath, parse_claude_transcript) or {}
         raw_message = parsed.get("message") or ""
         status = d.get("status")
@@ -414,7 +414,7 @@ def claude_sessions():
         cwd = d.get("cwd") or ""
         out.append({
             "id": sid,
-            "name": d.get("name") or parsed.get("title") or os.path.basename(cwd) or "sesja",
+            "name": d.get("name") or parsed.get("title") or os.path.basename(cwd) or "session",
             "project": os.path.basename(cwd.rstrip("/")) or "~",
             "cwd": cwd,
             "state": state,
@@ -473,8 +473,8 @@ def codex_connect(db):
         conn.execute("select 1 from threads limit 1")
         return conn
     except sqlite3.OperationalError:
-        # Po zamknięciu bazy przez Codex znikają pliki -wal/-shm, a połączenie „ro” nie umie ich
-        # utworzyć. Bez -wal cała treść jest w głównym pliku, więc immutable czyta aktualny stan.
+        # When Codex closes the database its -wal/-shm files disappear and a read-only connection cannot
+        # create them. Without a -wal file everything is in the main file, so immutable reads current data.
         return sqlite3.connect("file:%s?mode=ro&immutable=1" % db, uri=True, timeout=2)
 
 
@@ -507,7 +507,7 @@ def codex_sessions():
             state, detail = "waiting", "question"
         out.append({
             "id": tid,
-            "name": title or "wątek",
+            "name": title or "thread",
             "project": os.path.basename((cwd or "").rstrip("/")) or "~",
             "cwd": cwd,
             "state": state,
@@ -568,7 +568,7 @@ def parse_provider(p, kind):
         "month": month,
         "multiple": round(month / price, 1) if month is not None and price else None,
         "fetchedAt": iso_to_ms(p.get("fetchedAt")),
-        # Prawdziwe pieniądze ponad abonament: płatne extra usage (Claude) i saldo kredytów (Codex).
+        # Real money on top of the subscription: paid extra usage (Claude) and the credit balance (Codex).
         "extra": extra_usage(lines.get("Extra usage spent")),
         "credits": money((lines.get("Credits") or {}).get("value")),
     }
@@ -592,14 +592,14 @@ def usage():
                         bar["forecast"] = forecast("%s:%s" % (pid, kind), kind, bar)
         save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
-    except Exception as exc:  # OpenUsage wyłączony / zmiana API
-        _usage_cache.update(at=time.time(), error="openusage")  # kod — tekst tłumaczy strona
+    except Exception as exc:  # OpenUsage not running or its API changed
+        _usage_cache.update(at=time.time(), error="openusage")  # a code; the page translates it
     return _usage_cache
 
 
-# ---------- prognoza limitu ----------
+# ---------- limit forecast ----------
 
-# Z jakiego okna liczymy tempo i ile danych musi być, żeby prognoza miała sens.
+# Window used for the usage pace, and the minimum span of data for a meaningful forecast.
 FORECAST = {"session": (45 * 60e3, 10 * 60e3), "weekly": (24 * 3600e3, 3 * 3600e3)}
 
 try:
@@ -615,7 +615,7 @@ def record_usage(key, bar):
     t, reset_min = now_ms(), bar["resetsAt"] // 60000
     h = _history.setdefault(key, [])
     if h and abs(h[-1][2] - reset_min) > 1:
-        h.clear()  # nowe okno limitu — stare tempo nie ma znaczenia
+        h.clear()  # a new limit window; the old pace no longer applies
     h.append([t, bar["pct"], reset_min])
     keep = FORECAST[key.split(":")[1]][0]
     _history[key] = [x for x in h if x[0] >= t - keep]
@@ -634,7 +634,7 @@ def save_history():
 
 
 def forecast(key, kind, bar):
-    """Kiedy przy obecnym tempie skończy się limit. None = za mało danych."""
+    """When the limit runs out at the current pace. None means not enough data."""
     if bar["pct"] >= 100:
         return {"exhausted": True}
     pts = _history.get(key) or []
@@ -647,10 +647,10 @@ def forecast(key, kind, bar):
     return {"eta": eta, "beforeReset": bool(bar.get("resetsAt")) and eta < bar["resetsAt"]}
 
 
-# ---------- dane odświeżane w tle (GitHub, statusy) ----------
+# ---------- data refreshed in the background (GitHub, GitLab, status, git) ----------
 
 class Poller(threading.Thread):
-    """Odpytuje wolne źródło co `interval` s; przy błędzie trzyma ostatni dobry wynik."""
+    """Polls a slow source every `interval` s and keeps the last good result on errors."""
 
     def __init__(self, fn, interval):
         super().__init__(daemon=True)
@@ -661,7 +661,7 @@ class Poller(threading.Thread):
         while True:
             try:
                 self.value, self.error, self.at = self.fn(), None, time.time()
-            except RuntimeError as exc:  # nasze własne błędy (np. kod „glab_missing”) — bez nazwy klasy
+            except RuntimeError as exc:  # our own errors (codes such as "glab_missing"), without the class name
                 self.error = str(exc)
             except Exception as exc:
                 self.error = "%s: %s" % (exc.__class__.__name__, exc)
@@ -689,7 +689,7 @@ fragment pr on PullRequest {
 
 def github_prs():
     if not GH:
-        raise RuntimeError("brak gh")
+        raise RuntimeError("gh_missing")
     r = subprocess.run([GH, "api", "graphql", "-f", "query=" + GH_QUERY],
                        capture_output=True, text=True, timeout=30)
     if r.returncode:
@@ -728,8 +728,8 @@ GL_PIPELINE = {"SUCCESS": "success", "FAILED": "failure", "RUNNING": "pending", 
 
 
 def gitlab_mrs(host):
-    """Merge requesty z GitLaba przez glab (zalogowany: glab auth login --hostname <host>)."""
-    glab = GLAB or shutil.which("glab", path=_BIN_PATH)  # mógł zostać zainstalowany po starcie serwera
+    """GitLab merge requests via glab (signed in with: glab auth login --hostname <host>)."""
+    glab = GLAB or shutil.which("glab", path=_BIN_PATH)  # may have been installed after the server started
     if not glab:
         raise RuntimeError("glab_missing")
     r = subprocess.run([glab, "api", "graphql", "--hostname", host, "-f", "query=" + GL_QUERY],
@@ -777,10 +777,10 @@ _github = Poller(github_prs, SLOW_POLL)
 _gitlab = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_mrs(h), SLOW_POLL) for g in PR_GROUPS if g.get("gitlab")}
 _status = Poller(service_status, SLOW_POLL)
 
-# Foldery aktywnych sesji — aktualizowane przy każdym /api/state, czytane przez wątek sprawdzający gita.
+# Working folders of active sessions: updated on every /api/state, read by the git checker thread.
 _session_dirs = set()
-_toplevels = {}  # folder → (czas, katalog główny repo albo None)
-GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")  # status nie zakłada index.lock — nie przeszkadza sesjom
+_toplevels = {}  # folder -> (time, repository root or None)
+GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")  # git status takes no index.lock, so it never gets in the way of sessions
 
 
 def git(top, *args):
@@ -800,7 +800,7 @@ def git_toplevel(path):
 
 
 def local_changes():
-    """Repozytoria aktywnych sesji z niezacommitowanymi plikami albo niewypchniętymi commitami."""
+    """Repositories of active sessions with uncommitted files or unpushed commits."""
     if not GIT:
         raise RuntimeError("git_missing")
     tops = sorted({t for t in (git_toplevel(d) for d in list(_session_dirs)) if t})
@@ -829,7 +829,7 @@ _local = Poller(local_changes, 60)
 
 
 def pr_groups():
-    """PR-y podzielone na grupy z config.json (np. prywatne / praca); reszta z GitHuba trafia do „inne”."""
+    """Pull requests split into the groups from config.json; other GitHub PRs go to "Other"."""
     gh = _github.snapshot()
     gh_items = gh["data"] or []
     out, claimed = [], set()
@@ -856,7 +856,7 @@ def pr_groups():
     return out
 
 
-# ---------- kalendarz ----------
+# ---------- calendar ----------
 
 def calendar():
     try:
@@ -871,7 +871,7 @@ def calendar():
 # ---------- HTTP ----------
 
 _last_good = {}
-GRACE = 120  # s — tyle pokazujemy ostatnie dobre dane, zanim zgłosimy błąd
+GRACE = 120  # s to keep showing the last good data before reporting an error
 
 
 def safe(fn, fallback):
@@ -882,12 +882,12 @@ def safe(fn, fallback):
     except Exception as exc:
         at, value = _last_good.get(fn.__name__, (0, fallback))
         if time.time() - at < GRACE:
-            return value, None  # chwilowy błąd (np. baza w trakcie zapisu) — bez mrugania
+            return value, None  # a transient error (e.g. the database mid-write); avoid flicker
         return fallback, "%s: %s" % (exc.__class__.__name__, exc)
 
 
 def static_version():
-    """Zmienia się przy każdej zmianie plików strony — kiosk wtedy sam się przeładowuje."""
+    """Changes whenever a page file changes, so the kiosk reloads itself."""
     return max(int(f.stat().st_mtime) for f in STATIC.iterdir() if f.suffix in STATIC_TYPES)
 
 
@@ -900,7 +900,7 @@ def state():
         _session_dirs.clear()
         _session_dirs.update(dirs)
         if not DEMO and not _local.is_alive():
-            _local.start()  # dopiero teraz wiadomo, które repozytoria sprawdzać
+            _local.start()  # only now do we know which repositories to check
     cal, cal_err = safe(calendar, {"events": []})
     data = u.get("data") or {}
     return {
@@ -917,7 +917,7 @@ def state():
 
 
 def open_session(tool, sid):
-    """Otwiera sesję w aplikacji. URL bierzemy z naszych danych, nigdy od klienta."""
+    """Opens a session in its app. The URL comes from our own data, never from the client."""
     sessions = {"claude": claude_sessions, "codex": codex_sessions}.get(tool)
     if not sessions:
         return False
@@ -926,14 +926,14 @@ def open_session(tool, sid):
         return False
     cmd = ["/usr/bin/open"]
     if tool == "claude":
-        # Obie instancje Claude rejestrują claude://, więc wskazujemy właściwą wprost.
+        # Both Claude instances register claude://, so name the right one explicitly.
         cmd += ["-b", claude_instance(session["pid"])[1]]
     subprocess.run(cmd + [session["url"]], check=False, timeout=5)
     return True
 
 
 def open_target(body):
-    """Klient podaje tylko, CO otworzyć; adres zawsze pochodzi z danych serwera."""
+    """The client only says WHAT to open; the address always comes from server data."""
     kind = body.get("kind", "session")
     url = None
     if kind == "session":
@@ -964,7 +964,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def host_ok(self):
-        # Ochrona przed DNS rebinding: obca strona nie może czytać API pod własną domeną.
+        # DNS rebinding protection: a foreign site cannot read the API under its own domain.
         if self.headers.get("Host") in ALLOWED_HOSTS:
             return True
         self.send(421, b"misdirected request", "text/plain")
@@ -973,7 +973,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if not self.host_ok():
             return
-        # Tylko nasza własna strona (Origin) i tylko JSON — inna strona nie wywoła tego przez CSRF.
+        # Only our own page (Origin) and only JSON, so another site cannot trigger this via CSRF.
         origin = self.headers.get("Origin", "")
         if origin.split("://", 1)[-1] not in ALLOWED_HOSTS or self.headers.get("Content-Type") != "application/json":
             return self.send(403, b"forbidden", "text/plain")
