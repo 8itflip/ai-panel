@@ -18,6 +18,7 @@ Działa w całości lokalnie, bez zależności (Python 3 ze standardową bibliot
 | Kalendarz | aplikacja Kalendarz (EventKit) → `bin/calendar-helper` → `~/Library/Caches/ai-panel/calendar.json` |
 | Trend 14 dni, koszt i tokeny dziś | API OpenUsage (j.w.) |
 | Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |
+| Lokalne zmiany | `git status` (bez blokady indeksu) w repozytoriach aktywnych sesji, co minutę |
 | Pull requesty i CI | `gh api graphql` co 2 min: Twoje otwarte PR-y + PR-y czekające na Twoje review |
 | Status usług | publiczne `status.claude.com` i `status.openai.com` (`/api/v2/summary.json`) co 2 min |
 
@@ -53,5 +54,10 @@ PANEL_LANG="pl"   # opcjonalnie: wymusza język panelu (domyślnie język system
 
 Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1). Układ skaluje się
 do dowolnej rozdzielczości; projektowany pod 1920×720 i 1920×1080.
+
+Grupy PR-ów: skopiuj `config.example.json` do `config.json` (plik lokalny, poza gitem). Grupa to
+właściciele na GitHubie (konto lub organizacja) i/lub host GitLaba. Merge requesty z GitLaba wymagają
+zalogowanego `glab`: `glab auth login --hostname <host>`. PR-y innych właścicieli trafiają do „Inne”.
+Po zmianie pliku zrestartuj serwer.
 
 Do pracy nad wyglądem: `python3 server.py` i http://127.0.0.1:7319. Logi: `~/Library/Logs/ai-panel/`.

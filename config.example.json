@@ -1,0 +1,7 @@
+{
+  "prGroups": [
+    { "name": "Personal", "github": ["your-github-login"] },
+    { "name": "Work", "github": ["your-company-org"] },
+    { "name": "Client", "gitlab": "gitlab.example.com" }
+  ]
+}

@@ -14,13 +14,17 @@ open pull requests with CI status, and service status.
 
 - **Sessions in two columns (Claude, Codex)**: waiting for you, working, done. Sessions that wait for
   you are highlighted and counted on the left. Click a session to open it in the app.
-- **Usage limits**: 5-hour and weekly bars with reset time, a forecast when the current pace would
+- **Usage limits**: how much is left of the 5-hour and weekly limits, with reset time, a forecast when the current pace would
   run out before the reset, and a banner when a limit is exhausted.
 - **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
-  API prices. A 14-day token trend in each column header.
+  API prices. A 14-day token trend in each column header. Money you actually pay on top of the
+  subscription (Claude extra usage, Codex credits) is shown separately.
+- **Idle sessions**: Claude sessions idle for 2+ days are dimmed, with their count and memory use.
+- **Local changes**: repositories of active sessions with uncommitted files or unpushed commits.
 - **Calendar**: upcoming meetings from macOS Calendar, with a "Join" bar 10 minutes before a meeting
   (Teams, Meet, Zoom, Webex links).
-- **Pull requests**: your open PRs and PRs waiting for your review, with CI status.
+- **Pull requests**: your open PRs and PRs waiting for your review, with CI status, from GitHub and
+  GitLab, optionally split into groups.
 - **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
 - **Kiosk mode**: opens full screen on a chosen monitor at login and closes when it is unplugged.
 - Light and dark theme; scales to any resolution (designed for 1920×1080 and 1920×720 bar displays).
@@ -58,6 +62,14 @@ SCREEN_NAME="M14"
 
 Without it, the first display wider than 2:1 is used. The main display is never used.
 Add `PANEL_LANG="en"` (or `"pl"`) to force the interface language.
+
+### Pull request groups
+
+Copy `config.example.json` to `config.json` (kept out of git) to split pull requests into groups,
+for example personal and work. A group takes GitHub owners (users or orgs) and/or a GitLab host;
+GitLab merge requests need [glab](https://gitlab.com/gitlab-org/cli) signed in with
+`glab auth login --hostname <host>`. PRs from other GitHub owners land in "Other".
+Restart the server after changing the file.
 
 `./uninstall.sh` removes the agents. Logs are in `~/Library/Logs/ai-panel/`.
 

@@ -10,7 +10,7 @@ def _session(i, tool, name, project, state, message, ago, cost, detail=None, ins
     return {
         "id": "%s-demo-%d" % (tool, i), "name": name, "project": project, "state": state, "detail": detail,
         "message": message, "time": now - ago, "source": tool, "url": None, "instance": instance,
-        "cost": {"usd": cost, "partial": False},
+        "cost": {"usd": cost, "partial": False}, "memory": 280e6 + i * 35e6, "stale": ago > 2 * 24 * HOUR,
     }
 
 
@@ -41,10 +41,10 @@ def state():
         _session(6, "claude", "Dashboard dark mode", "web-shop", "done",
                  "Dark mode is done; colors pass contrast checks in both themes.", 2 * HOUR, 2.18),
         _session(7, "claude", "Investigate memory spike", "infra", "done",
-                 "The spike comes from an unbounded cache in the image resizer; fix is in PR #88.", 3 * HOUR, 7.96,
+                 "The spike comes from an unbounded cache in the image resizer; fix is in PR #88.", 3 * 24 * HOUR, 7.96,
                  instance="Work"),
         _session(8, "claude", "Refactor billing module", "acme-api", "done",
-                 "Split billing into invoices and payments; behavior unchanged, 214 tests pass.", 5 * HOUR, 11.40),
+                 "Split billing into invoices and payments; behavior unchanged, 214 tests pass.", 4 * 24 * HOUR, 11.40),
     ]
     codex = [
         _session(1, "codex", "Review onboarding flow", "web-shop", "working",
@@ -71,17 +71,24 @@ def state():
         ("Dark mode for dashboard", "web-shop", 341, "success", None, False, False),
         ("Release notes 2.4", "docs", 57, None, None, True, False),
     ]
+    claude_usage = _usage("Max", 72, 41, 48.2, 912.0, 9.1,
+                          [40, 55, 38, 70, 64, 20, 15, 80, 92, 61, 75, 88, 66, 58], 95 * MIN,
+                          {"eta": now + 70 * MIN, "beforeReset": True})
+    claude_usage["extra"] = {"used": 12.40, "limit": 50}
+    codex_usage = _usage("Plus", 23, 12, 3.1, 64.0, 3.2, [5, 8, 3, 12, 9, 0, 0, 14, 11, 7, 10, 13, 6, 9], 3 * HOUR)
+    codex_usage["credits"] = 18.50
     return {
         "now": now,
+        "local": {"data": [
+            {"repo": "web-shop", "branch": "feat/dark-mode", "files": 3, "ahead": 2, "noRemote": False},
+            {"repo": "infra", "branch": "main", "files": 1, "ahead": 0, "noRemote": False},
+        ], "error": None},
         "claude": {
-            "usage": _usage("Max", 72, 41, 48.2, 912.0, 9.1,
-                            [40, 55, 38, 70, 64, 20, 15, 80, 92, 61, 75, 88, 66, 58], 95 * MIN,
-                            {"eta": now + 70 * MIN, "beforeReset": True}),
+            "usage": claude_usage,
             "sessions": claude, "error": None,
         },
         "codex": {
-            "usage": _usage("Plus", 23, 12, 3.1, 64.0, 3.2,
-                            [5, 8, 3, 12, 9, 0, 0, 14, 11, 7, 10, 13, 6, 9], 3 * HOUR),
+            "usage": codex_usage,
             "sessions": codex, "error": None,
         },
         "usageError": None,
@@ -90,11 +97,13 @@ def state():
             {"title": t, "start": now + s, "end": now + s + d * MIN, "allDay": False, "calendar": "Work",
              "color": c, "link": l} for t, s, d, c, l in events
         ]},
-        "github": {"data": [
-            {"url": "https://github.com/example/%s/pull/%d" % (repo, n), "number": n, "title": title, "repo": repo,
-             "ci": ci, "decision": dec, "draft": draft, "review": review, "updated": now - i * HOUR}
-            for i, (title, repo, n, ci, dec, draft, review) in enumerate(prs)
-        ], "error": None},
+        "prs": [
+            {"name": name, "error": None, "loading": False, "items": [
+                {"url": "https://github.com/example/%s/pull/%d" % (repo, n), "ref": "#%d" % n, "title": title,
+                 "repo": repo, "ci": ci, "decision": dec, "draft": draft, "review": review, "updated": now - i * HOUR}
+                for i, (title, repo, n, ci, dec, draft, review) in enumerate(prs) if i in idx
+            ]} for name, idx in (("Personal", (3,)), ("Work", (0, 1, 2)), ("Docs", (4,)))
+        ],
         "status": {
             "claude": {"indicator": "none", "description": "All Systems Operational", "incident": None},
             "codex": {"indicator": "none", "description": "All Systems Operational", "incident": None},

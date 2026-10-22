@@ -48,18 +48,30 @@ CLAUDE_DESKTOP_ID = re.compile(r"^local_[A-Za-z0-9-]{1,64}$")
 CLAUDE_BUNDLE = "com.anthropic.claudefordesktop"
 # Druga instancja Claude z Parall ma własne sesje; jej proces działa z „…/Application Support/Parall/<Nazwa>/claude-code/…”.
 PARALL_EXE = re.compile(r"/Application Support/Parall/([^/]+)/claude-code/")
-GH_PR = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/pull/\d+$")
 UUID = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 
 CACHE_DIR = HOME / "Library" / "Caches" / "ai-panel"
 USAGE_HISTORY = CACHE_DIR / "usage-history.json"
-# launchd ma okrojony PATH, a gh z Homebrew leży poza nim.
-GH = shutil.which("gh", path=os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin")
+# launchd ma okrojony PATH, a gh/glab z Homebrew leżą poza nim.
+_BIN_PATH = os.environ.get("PATH", "") + ":/opt/homebrew/bin:/usr/local/bin"
+GH = shutil.which("gh", path=_BIN_PATH)
+GIT = shutil.which("git", path=_BIN_PATH)
+GLAB = shutil.which("glab", path=_BIN_PATH)
+
+# Lokalna konfiguracja (poza gitem), np. grupy PR-ów — wzór w config.example.json.
+CONFIG_FILE = ROOT / "config.json"
+try:
+    CONFIG = json.loads(CONFIG_FILE.read_text())
+except (OSError, ValueError):
+    CONFIG = {}
+# Bez konfiguracji: jedna grupa ze wszystkimi PR-ami z GitHuba.
+PR_GROUPS = CONFIG.get("prGroups") or [{"name": None, "github": ["*"]}]
 STATUS_PAGES = {
     "claude": "https://status.claude.com/api/v2/summary.json",
     "codex": "https://status.openai.com/api/v2/summary.json",
 }
 SLOW_POLL = 120  # s — GitHub i strony statusu
+STALE_AFTER = 2 * 24 * 3600 * 1000  # ms bez ruchu — sesja Claude uznana za „starą”
 
 STATIC_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
 
@@ -292,6 +304,36 @@ def claude_instance(pid):
     return result
 
 
+_mem = {"at": 0, "rss": {}, "children": {}, "memo": {}}
+
+
+def process_memory(pid):
+    """RSS procesu sesji razem z potomkami (serwery MCP, powłoki). Jedno wywołanie ps co 30 s."""
+    if time.time() - _mem["at"] > 30:
+        try:
+            out = subprocess.run(["/bin/ps", "-axo", "pid=,ppid=,rss="],
+                                 capture_output=True, text=True, timeout=5).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        rss, children = {}, {}
+        for line in out.splitlines():
+            try:
+                p, pp, kb = map(int, line.split())
+            except ValueError:
+                continue
+            rss[p] = kb * 1024
+            children.setdefault(pp, []).append(p)
+        _mem.update(at=time.time(), rss=rss, children=children, memo={})
+
+    def total(p, depth=0):
+        if p not in _mem["memo"]:
+            kids = _mem["children"].get(p, []) if depth < 30 else []
+            _mem["memo"][p] = _mem["rss"].get(p, 0) + sum(total(k, depth + 1) for k in kids)
+        return _mem["memo"][p]
+
+    return total(pid)
+
+
 def pid_alive(pid):
     try:
         os.kill(pid, 0)
@@ -344,6 +386,7 @@ def claude_cost(sid, tpath):
 
 def claude_sessions():
     out = []
+    now = now_ms()
     for f in CLAUDE_SESSIONS.glob("*.json"):
         try:
             d = json.loads(f.read_text())
@@ -373,6 +416,7 @@ def claude_sessions():
             "id": sid,
             "name": d.get("name") or parsed.get("title") or os.path.basename(cwd) or "sesja",
             "project": os.path.basename(cwd.rstrip("/")) or "~",
+            "cwd": cwd,
             "state": state,
             "detail": detail,
             "message": clean_text(raw_message),
@@ -382,7 +426,10 @@ def claude_sessions():
             "pid": pid,
             "instance": claude_instance(pid)[0],
             "cost": claude_cost(sid, tpath),
+            "memory": process_memory(pid),
         })
+    for x in out:
+        x["stale"] = x["state"] in ("done", "aborted") and now - (x["time"] or now) > STALE_AFTER
     return out
 
 
@@ -462,6 +509,7 @@ def codex_sessions():
             "id": tid,
             "name": title or "wątek",
             "project": os.path.basename((cwd or "").rstrip("/")) or "~",
+            "cwd": cwd,
             "state": state,
             "detail": detail,
             "message": clean_text(raw_message),
@@ -490,6 +538,12 @@ def tokens(value):
     return float(m.group(1).replace(",", "")) * {"K": 1e3, "M": 1e6, "B": 1e9}.get(m.group(2), 1)
 
 
+def extra_usage(line):
+    if not line or line.get("type") != "progress" or (line.get("format") or {}).get("kind") != "dollars":
+        return None
+    return {"used": line.get("used") or 0, "limit": line.get("limit")}
+
+
 def parse_provider(p, kind):
     lines = {l.get("label"): l for l in p.get("lines") or []}
 
@@ -514,6 +568,9 @@ def parse_provider(p, kind):
         "month": month,
         "multiple": round(month / price, 1) if month is not None and price else None,
         "fetchedAt": iso_to_ms(p.get("fetchedAt")),
+        # Prawdziwe pieniądze ponad abonament: płatne extra usage (Claude) i saldo kredytów (Codex).
+        "extra": extra_usage(lines.get("Extra usage spent")),
+        "credits": money((lines.get("Credits") or {}).get("value")),
     }
 
 
@@ -604,6 +661,8 @@ class Poller(threading.Thread):
         while True:
             try:
                 self.value, self.error, self.at = self.fn(), None, time.time()
+            except RuntimeError as exc:  # nasze własne błędy (np. kod „glab_missing”) — bez nazwy klasy
+                self.error = str(exc)
             except Exception as exc:
                 self.error = "%s: %s" % (exc.__class__.__name__, exc)
             time.sleep(self.interval)
@@ -622,7 +681,7 @@ query {
 }
 fragment pr on PullRequest {
   number title url isDraft reviewDecision updatedAt
-  repository { name }
+  repository { name owner { login } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }
 """
@@ -641,7 +700,8 @@ def github_prs():
         commits = (n.get("commits") or {}).get("nodes") or [{}]
         rollup = ((commits[-1].get("commit") or {}).get("statusCheckRollup") or {}).get("state")
         return {
-            "url": n["url"], "number": n["number"], "title": n["title"], "repo": n["repository"]["name"],
+            "url": n["url"], "ref": "#%d" % n["number"], "title": n["title"], "repo": n["repository"]["name"],
+            "owner": n["repository"]["owner"]["login"],
             "draft": n.get("isDraft"), "review": review, "decision": n.get("reviewDecision"),
             "ci": rollup.lower() if rollup else None, "updated": iso_to_ms(n.get("updatedAt")),
         }
@@ -651,6 +711,48 @@ def github_prs():
         if n and n.get("url") and n["url"] not in seen:
             seen.add(n["url"])
             out.append(pr(n, review))
+    return out
+
+
+GL_QUERY = """
+query {
+  currentUser {
+    authored: authoredMergeRequests(state: opened, first: 20, sort: UPDATED_DESC) { nodes { ...mr } }
+    review: reviewRequestedMergeRequests(state: opened, first: 10, sort: UPDATED_DESC) { nodes { ...mr } }
+  }
+}
+fragment mr on MergeRequest { iid title webUrl draft updatedAt project { name } headPipeline { status } }
+"""
+GL_PIPELINE = {"SUCCESS": "success", "FAILED": "failure", "RUNNING": "pending", "PENDING": "pending",
+               "CREATED": "pending", "PREPARING": "pending", "WAITING_FOR_RESOURCE": "pending"}
+
+
+def gitlab_mrs(host):
+    """Merge requesty z GitLaba przez glab (zalogowany: glab auth login --hostname <host>)."""
+    glab = GLAB or shutil.which("glab", path=_BIN_PATH)  # mógł zostać zainstalowany po starcie serwera
+    if not glab:
+        raise RuntimeError("glab_missing")
+    r = subprocess.run([glab, "api", "graphql", "--hostname", host, "-f", "query=" + GL_QUERY],
+                       capture_output=True, text=True, timeout=30)
+    if r.returncode:
+        err = (r.stderr or r.stdout or "glab error").strip()
+        raise RuntimeError("glab_auth" if re.search(r"401|auth|token|log ?in", err, re.I) else err[:200])
+    d = json.loads(r.stdout)
+    if d.get("errors"):
+        raise RuntimeError(d["errors"][0].get("message", "GraphQL error")[:200])
+    me = (d.get("data") or {}).get("currentUser") or {}
+    out, seen = [], set()
+    for n, review in [(n, True) for n in (me.get("review") or {}).get("nodes") or []] + \
+                     [(n, False) for n in (me.get("authored") or {}).get("nodes") or []]:
+        if n and n.get("webUrl") and n["webUrl"] not in seen:
+            seen.add(n["webUrl"])
+            out.append({
+                "url": n["webUrl"], "ref": "!%s" % n["iid"], "title": n["title"],
+                "repo": (n.get("project") or {}).get("name") or "", "owner": None,
+                "draft": n.get("draft"), "review": review, "decision": None,
+                "ci": GL_PIPELINE.get(((n.get("headPipeline") or {}).get("status") or "").upper()),
+                "updated": iso_to_ms(n.get("updatedAt")),
+            })
     return out
 
 
@@ -672,7 +774,86 @@ def service_status():
 
 
 _github = Poller(github_prs, SLOW_POLL)
+_gitlab = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_mrs(h), SLOW_POLL) for g in PR_GROUPS if g.get("gitlab")}
 _status = Poller(service_status, SLOW_POLL)
+
+# Foldery aktywnych sesji — aktualizowane przy każdym /api/state, czytane przez wątek sprawdzający gita.
+_session_dirs = set()
+_toplevels = {}  # folder → (czas, katalog główny repo albo None)
+GIT_ENV = dict(os.environ, GIT_OPTIONAL_LOCKS="0")  # status nie zakłada index.lock — nie przeszkadza sesjom
+
+
+def git(top, *args):
+    return subprocess.run([GIT, "-C", top] + list(args), capture_output=True, text=True, timeout=15, env=GIT_ENV)
+
+
+def git_toplevel(path):
+    hit = _toplevels.get(path)
+    if hit and time.time() - hit[0] < 600:
+        return hit[1]
+    top = None
+    if os.path.isdir(path):
+        r = git(path, "rev-parse", "--show-toplevel")
+        top = r.stdout.strip() if r.returncode == 0 else None
+    _toplevels[path] = (time.time(), top)
+    return top
+
+
+def local_changes():
+    """Repozytoria aktywnych sesji z niezacommitowanymi plikami albo niewypchniętymi commitami."""
+    if not GIT:
+        raise RuntimeError("git_missing")
+    tops = sorted({t for t in (git_toplevel(d) for d in list(_session_dirs)) if t})
+    out = []
+    for top in tops:
+        st = git(top, "status", "--porcelain=v1", "--branch")
+        if st.returncode:
+            continue
+        lines = st.stdout.splitlines()
+        head = lines[0][3:] if lines and lines[0].startswith("## ") else ""
+        branch = re.split(r"\.\.\.| ", head, 1)[0] if head else ""
+        branch = re.sub(r"^No commits yet on ", "", head) if head.startswith("No commits yet") else branch
+        files = len([l for l in lines[1:] if l.strip()])
+        has_remote = bool(git(top, "remote").stdout.strip())
+        ahead = None
+        if has_remote:
+            r = git(top, "rev-list", "--count", "HEAD", "--not", "--remotes")
+            ahead = int(r.stdout.strip() or 0) if r.returncode == 0 else 0
+        if files or ahead:
+            out.append({"repo": os.path.basename(top), "branch": branch, "files": files, "ahead": ahead,
+                        "noRemote": not has_remote})
+    return out
+
+
+_local = Poller(local_changes, 60)
+
+
+def pr_groups():
+    """PR-y podzielone na grupy z config.json (np. prywatne / praca); reszta z GitHuba trafia do „inne”."""
+    gh = _github.snapshot()
+    gh_items = gh["data"] or []
+    out, claimed = [], set()
+    for g in PR_GROUPS:
+        items, errors, loading = [], [], False
+        owners = [o.lower() for o in g.get("github") or []]
+        if owners:
+            for p in gh_items:
+                if "*" in owners or (p.get("owner") or "").lower() in owners:
+                    items.append(p)
+                    claimed.add(p["url"])
+            errors.append(gh["error"])
+            loading = loading or (gh["data"] is None and not gh["error"])
+        if g.get("gitlab"):
+            snap = _gitlab[g["gitlab"]].snapshot()
+            items += snap["data"] or []
+            errors.append(snap["error"])
+            loading = loading or (snap["data"] is None and not snap["error"])
+        out.append({"name": g.get("name"), "items": items, "error": next((e for e in errors if e), None),
+                    "loading": loading, "host": g.get("gitlab")})
+    rest = [p for p in gh_items if p["url"] not in claimed]
+    if rest:
+        out.append({"name": None, "other": True, "items": rest, "error": None, "loading": False})
+    return out
 
 
 # ---------- kalendarz ----------
@@ -714,6 +895,12 @@ def state():
     u = usage()
     claude, claude_err = safe(claude_sessions, [])
     codex, codex_err = safe(codex_sessions, [])
+    dirs = {x.get("cwd") for x in claude + codex if x.get("cwd")}
+    if dirs:
+        _session_dirs.clear()
+        _session_dirs.update(dirs)
+        if not DEMO and not _local.is_alive():
+            _local.start()  # dopiero teraz wiadomo, które repozytoria sprawdzać
     cal, cal_err = safe(calendar, {"events": []})
     data = u.get("data") or {}
     return {
@@ -723,7 +910,8 @@ def state():
         "usageError": u.get("error"),
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),
-        "github": _github.snapshot(),
+        "prs": pr_groups(),
+        "local": _local.snapshot(),
         "status": _status.snapshot()["data"] or {},
     }
 
@@ -752,7 +940,8 @@ def open_target(body):
         return open_session(str(body.get("tool")), str(body.get("id")))
     if kind == "pr":
         want = str(body.get("url"))
-        if GH_PR.match(want) and any(p["url"] == want for p in _github.value or []):
+        known = list(_github.value or []) + [p for g in _gitlab.values() for p in g.value or []]
+        if want.startswith("https://") and any(p["url"] == want for p in known):
             url = want
     elif kind == "event":
         ev = next((e for e in calendar().get("events", [])
@@ -819,4 +1008,6 @@ if __name__ == "__main__":
     if not DEMO:
         _github.start()
         _status.start()
+        for poller in _gitlab.values():
+            poller.start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
