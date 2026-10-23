@@ -235,6 +235,7 @@ h2 {
   background: var(--work-bg); border-radius: 0.8rem; padding: 0.7rem 0.8rem 0.7rem 1rem;
 }
 .meeting.now { background: var(--wait-bg); }
+#meeting[hidden] { display: none; } /* .meeting sets display: flex, which would override hidden */
 .meeting .mt { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .meeting .mw { font-size: 0.8rem; font-weight: 650; color: var(--work); }
 .meeting.now .mw { color: var(--wait); }
