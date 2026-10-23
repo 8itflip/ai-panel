@@ -85,6 +85,7 @@ def state():
         ], "error": None},
         "claude": {
             "usage": claude_usage,
+            "accounts": [dict(_usage("Team", 18, 34, 0, 0, None, [0], 4 * HOUR), label="Acme Corp")],
             "sessions": claude, "error": None,
         },
         "codex": {

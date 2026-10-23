@@ -269,6 +269,40 @@ class CodexSessions(Temp):
         self.assertEqual(len(server.codex_sessions()), 1)
 
 
+class OpenUsageAccounts(Temp):
+    def setUp(self):
+        super().setUp()
+        providers = [
+            {"providerId": "claude", "plan": "Pro", "displayName": "Claude: Personal (me@example.com)",
+             "lines": [{"label": "Session", "type": "progress", "used": 40, "limit": 100}]},
+            {"providerId": "claude@1a2b", "plan": "Team", "displayName": "Claude: Zeta Corp (me@zeta.example)",
+             "lines": [{"label": "Weekly", "type": "progress", "used": 25, "limit": 100}]},
+            {"providerId": "claude@3c4d", "plan": "Max", "displayName": "Claude: Acme (Labs) (me@acme.example)",
+             "lines": [{"label": "Session", "type": "progress", "used": 5, "limit": 100}]},
+        ]
+        body = json.dumps(providers).encode()
+
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self, *a): return body
+
+        urlopen = server.urllib.request.urlopen
+        server.urllib.request.urlopen = lambda *a, **k: Response()
+        self.addCleanup(setattr, server.urllib.request, "urlopen", urlopen)
+        self.addCleanup(setattr, server, "save_history", server.save_history)
+        server.save_history = lambda: None
+        server._usage_cache.update(at=0)
+
+    def test_extra_claude_logins_are_listed_by_organization(self):
+        data = server.usage()["data"]
+        self.assertEqual(data["claude"]["session"]["pct"], 40)
+        accounts = data["claudeAccounts"]
+        self.assertEqual([(a["label"], a["plan"]) for a in accounts], [("Acme (Labs)", "Max"), ("Zeta Corp", "Team")])
+        self.assertEqual(accounts[1]["weekly"]["pct"], 25)
+        self.assertIsNone(accounts[1]["session"])
+
+
 class PullRequestGroups(unittest.TestCase):
     def setUp(self):
         for name in ("PR_GROUPS", "_gitlab"):
