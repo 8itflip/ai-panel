@@ -1,8 +1,17 @@
 name: Tests
 
+# Run only for code changes on main and in pull requests; documentation and screenshots do not need it.
 on:
   push:
+    branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", ".gitignore", "config.example.json"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE", ".gitignore", "config.example.json"]
+
+# A newer push makes the run for the previous one pointless.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -12,6 +21,7 @@ jobs:
     # macOS: the panel is macOS-only (EventKit, WebKit, launchd) and the runner image includes Chrome
     # for the UI smoke test.
     runs-on: macos-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
