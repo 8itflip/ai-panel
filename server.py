@@ -664,12 +664,10 @@ def parse_provider(p, kind):
     plan = p.get("plan") or ""
     price = PLAN_PRICES.get(kind, {}).get(plan.lower())
     month = money((lines.get("Last 30 Days") or {}).get("value"))
-    trend = (lines.get("Usage Trend") or {}).get("points") or []
     return {
         "plan": plan,
         "session": bar("Session"),
         "weekly": bar("Weekly"),
-        "trend": [{"label": t.get("label"), "value": t.get("value") or 0} for t in trend[-14:]],
         "todayTokens": tokens((lines.get("Today") or {}).get("value")),
         "today": money((lines.get("Today") or {}).get("value")),
         "month": month,
@@ -682,9 +680,13 @@ def parse_provider(p, kind):
 
 
 def account_label(p):
-    """Organization of an extra Claude account: "Claude: Acme (me@acme.com)" -> "Acme"."""
-    m = re.match(r"Claude:\s*(.+?)\s*\([^()]*\)\s*$", p.get("displayName") or "")
-    return m.group(1) if m else p.get("plan") or p.get("providerId")
+    """Organization of a Claude login: "Claude: Acme (me@acme.com)" -> "Acme".
+
+    None for a personal plan, whose organization Anthropic names "<email>'s Organization"."""
+    m = re.match(r"Claude:\s*(.+?)\s*\(([^()]*)\)\s*$", p.get("displayName") or "")
+    if not m:
+        return p.get("plan") or p.get("providerId")
+    return None if m.group(1) == m.group(2) + "'s Organization" else m.group(1)
 
 
 def provider_usage(p, pid, kind):
@@ -712,10 +714,12 @@ def usage():
             pid = p.get("providerId") or ""
             if pid in ("claude", "codex"):
                 data[pid] = provider_usage(p, pid, pid)
+                if pid == "claude":
+                    data[pid]["label"] = account_label(p)
             elif pid.startswith("claude@"):
                 # Further Claude logins (e.g. from Claude Swap) get their own cards in OpenUsage, ids "claude@<hash>".
                 data["claudeAccounts"].append(dict(provider_usage(p, pid, "claude"), label=account_label(p)))
-        data["claudeAccounts"].sort(key=lambda a: a["label"].lower())
+        data["claudeAccounts"].sort(key=lambda a: (a["label"] or "").lower())
         save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
     except Exception as exc:  # OpenUsage not running or its API changed
