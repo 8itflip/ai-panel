@@ -139,11 +139,12 @@ function renderStatus(col, st) {
 // A personal plan has no organization name of its own (label null).
 const accountName = (u) => u?.label || t("account.personal");
 
-function accountRow(a, col) {
-  // A further login of the same tool (e.g. a work account), titled like the column.
+function accountBlock(a, col) {
+  // A further login of the same tool (e.g. a work account), laid out like the column's own header.
   const glyph = $(".glyph", col).outerHTML, tool = $("h1", col).dataset.name;
-  return `<div class="acct">${glyph}<h2>${esc(`${tool} - ${accountName(a)}`)}</h2><span class="plan">${esc(a.plan)}</span></div>` +
-    meter(t("limit.session"), a.session) + meter(t("limit.weekly"), a.weekly);
+  return `<div class="acct"><div class="col-title">${glyph}<h2>${esc(`${tool} - ${accountName(a)}`)}</h2>` +
+    `<span class="plan">${esc(a.plan)}</span></div>` +
+    `<div class="bars">${meter(t("limit.session"), a.session) + meter(t("limit.weekly"), a.weekly)}</div></div>`;
 }
 
 function renderUsage(col, usage, error, accounts = []) {
@@ -176,7 +177,7 @@ function renderUsage(col, usage, error, accounts = []) {
   $(".bars", col).innerHTML = usage
     ? meter(t("limit.session"), usage.session) + meter(t("limit.weekly"), usage.weekly)
     : `<div class="na">${esc(error ? t(`usage.${error}`) : t("usage.none"))}</div>`;
-  $(".bars", col).insertAdjacentHTML("beforeend", accounts.map((a) => accountRow(a, col)).join(""));
+  $(".accts", col).innerHTML = accounts.map((a) => accountBlock(a, col)).join("");
   $(".banner", col).innerHTML = limitBanner(usage);
   fillTimes(col.querySelector(".col-head"));
   fillTimes(col.querySelector(".banner"));
