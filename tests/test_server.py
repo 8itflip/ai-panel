@@ -304,6 +304,32 @@ class OpenUsageAccounts(Temp):
         self.assertIsNone(accounts[1]["session"])
 
 
+class InstanceSpend(Temp):
+    def setUp(self):
+        super().setUp()
+        for name in ("CLAUDE_PROJECTS", "PARALL_DIR"):
+            self.addCleanup(setattr, server, name, getattr(server, name))
+        server.CLAUDE_PROJECTS, server.PARALL_DIR = self.dir / "projects", self.dir / "Parall"
+        server._pricing.tables, server._pricing.loaded_at = [{"known-model": PRICE}], time.time()
+        server._instance_spend["at"] = 0
+        sessions = self.dir / "Parall" / "Claude (Work)" / "claude-code-sessions" / "acct" / "org"
+        sessions.mkdir(parents=True)
+        (sessions / "local_1.json").write_text(json.dumps({"cliSessionId": "work-1"}))
+        now, old = time.time(), time.time() - 40 * 86400
+        iso = lambda ts: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+        msg = lambda i, ts: {"type": "assistant", "timestamp": iso(ts),
+                             "message": {"id": "m%d" % i, "model": "known-model", "usage": {"output_tokens": 1e6}}}
+        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-work" / "work-1.jsonl", [msg(1, now), msg(2, old)])
+
+    def test_cost_moves_from_main_card_to_its_account(self):
+        self.assertEqual(server.instance_spend(), {"Work": {"today": 15.0, "month": 15.0}})  # the 40-day-old reply is left out
+        main = {"plan": "Pro", "today": 40.0, "month": 100.0, "multiple": 5.0}
+        work = {"label": "Work", "plan": "Team", "today": None, "month": None, "multiple": None}
+        server.attribute_spend(main, [work], server.instance_spend())
+        self.assertEqual((work["today"], work["month"], work["multiple"]), (15.0, 15.0, 0.5))
+        self.assertEqual((main["today"], main["month"], main["multiple"]), (25.0, 85.0, 4.2))
+
+
 class PullRequestGroups(unittest.TestCase):
     def setUp(self):
         for name in ("PR_GROUPS", "_gitlab"):

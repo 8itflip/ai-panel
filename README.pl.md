@@ -16,6 +16,7 @@ Działa w całości lokalnie, bez zależności (Python 3 ze standardową bibliot
 | Wątki Codex (aplikacja i CLI) | `~/.codex/state_*.sqlite` (tabela `threads`) + pliki `rollout-*.jsonl` |
 | Limity 5 h / tygodniowe, koszty | API OpenUsage: `http://127.0.0.1:6736/v1/usage` |
 | Limity kolejnych kont Claude | API OpenUsage (j.w.): providery `claude@…`, które OpenUsage tworzy dla kont z Claude Swap |
+| Koszt kolejnego konta Claude | transkrypty sesji jego instancji Parall (`~/Library/Application Support/Parall/<Nazwa>/claude-code-sessions`), odejmowane od konta głównego |
 | Kalendarz | aplikacja Kalendarz (EventKit) → `bin/calendar-helper` → `~/Library/Caches/ai-panel/calendar.json` |
 | Koszt i tokeny dziś | API OpenUsage (j.w.) |
 | Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |

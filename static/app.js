@@ -139,11 +139,17 @@ function renderStatus(col, st) {
 // A personal plan has no organization name of its own (label null).
 const accountName = (u) => u?.label || t("account.personal");
 
+function costLine(usage) {
+  if (usage?.month == null) return "";
+  return t("cost", { today: usd(usage.today || 0), month: usd(usage.month) }) +
+    (usage.multiple ? t("multiple", { x: usage.multiple.toLocaleString(LOCALE) }) : "");
+}
+
 function accountBlock(a, col) {
   // A further login of the same tool (e.g. a work account), laid out like the column's own header.
   const glyph = $(".glyph", col).outerHTML, tool = $("h1", col).dataset.name;
   return `<div class="acct"><div class="col-title">${glyph}<h2>${esc(`${tool} - ${accountName(a)}`)}</h2>` +
-    `<span class="plan">${esc(a.plan)}</span></div>` +
+    `<span class="plan">${esc(a.plan)}</span><div class="money"><span class="cost">${costLine(a)}</span></div></div>` +
     `<div class="bars">${meter(t("limit.session"), a.session) + meter(t("limit.weekly"), a.weekly)}</div></div>`;
 }
 
@@ -155,13 +161,7 @@ function renderUsage(col, usage, error, accounts = []) {
   const h1 = $("h1", col);
   h1.textContent = accounts.length ? `${h1.dataset.name} - ${accountName(usage)}` : h1.dataset.name;
   $(".plan", col).textContent = usage?.plan || "";
-  const cost = $(".cost", col);
-  if (usage && usage.month != null) {
-    cost.innerHTML = t("cost", { today: usd(usage.today || 0), month: usd(usage.month) }) +
-      (usage.multiple ? t("multiple", { x: usage.multiple.toLocaleString(LOCALE) }) : "");
-  } else {
-    cost.textContent = "";
-  }
+  $(".cost", col).innerHTML = costLine(usage);
   // Real money on top of the subscription; warn at 80% of the extra usage limit or a balance under $5.
   const spend = $(".spend", col);
   const extra = usage?.extra, credits = usage?.credits;
@@ -259,7 +259,7 @@ function renderTool(key, data, usageError, status, health) {
 
 /* ---------- summary ---------- */
 
-function renderSummary(all, claudeUsage, codexUsage) {
+function renderSummary(all, usages) {
   const count = (st) => all.filter((s) => s.state === st).length;
   const w = count("waiting"), k = count("working"), d = count("done");
   for (const [id, n] of [["waiting", w], ["working", k], ["done", d]]) {
@@ -271,13 +271,13 @@ function renderSummary(all, claudeUsage, codexUsage) {
   h.classList.toggle("alert", w > 0);
   h.textContent = w > 0 ? t("headline.waiting", { n: w }) : k > 0 ? t("headline.working", { n: k }) : t("headline.idle");
 
-  // Today: sessions active since midnight plus cost and tokens from OpenUsage (both tools).
+  // Today: sessions active since midnight plus cost and tokens of every account (Claude and Codex).
   const midnight = new Date().setHours(0, 0, 0, 0);
   const today = all.filter((s) => s.time >= midnight).length;
-  const cost = (claudeUsage?.today || 0) + (codexUsage?.today || 0);
-  const tok = (claudeUsage?.todayTokens || 0) + (codexUsage?.todayTokens || 0);
+  const cost = usages.reduce((n, u) => n + (u?.today || 0), 0);
+  const tok = usages.reduce((n, u) => n + (u?.todayTokens || 0), 0);
   const parts = [t("sessions", { n: today }).replace(String(today), `<b>${today}</b>`)];
-  if (claudeUsage || codexUsage) parts.push(`<b>${usd(cost)}</b>`, esc(t("tokens", { n: tokensLabel(tok) })));
+  if (usages.some(Boolean)) parts.push(`<b>${usd(cost)}</b>`, esc(t("tokens", { n: tokensLabel(tok) })));
   $("#today").innerHTML = `<span>${t("today")}</span> ${parts.join(" · ")}`;
 }
 
@@ -485,7 +485,7 @@ function render() {
   const st = last.status || {};
   renderTool("claude", last.claude, last.usageError, st.claude, last.health);
   renderTool("codex", last.codex, last.usageError, st.codex, last.health);
-  renderSummary([...last.claude.sessions, ...last.codex.sessions], last.claude.usage, last.codex.usage);
+  renderSummary([...last.claude.sessions, ...last.codex.sessions], [last.claude.usage, ...last.claude.accounts, last.codex.usage]);
   renderLocal(last.local);
   renderPRs(last.prs); // PRs and changes first: the calendar fits into whatever space is left
   renderCalendar(last.calendar || {});
