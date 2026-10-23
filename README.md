@@ -17,6 +17,8 @@ open pull requests with CI status, and service status.
   counted on the left. Click a session to open it in the app.
 - **Usage limits**: how much is left of the 5-hour and weekly limits, with reset time, a forecast when the current pace would
   run out before the reset, and a banner when a limit is exhausted.
+  A second Claude login (added to OpenUsage with [Claude Swap](https://github.com/realiti4/claude-swap))
+  gets its own smaller row of limits under the organization name.
 - **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
   API prices. A 14-day token trend in each column header. Money you actually pay on top of the
   subscription (Claude extra usage, Codex credits) is shown separately.

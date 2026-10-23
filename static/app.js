@@ -96,7 +96,7 @@ function forecastNote(bar) {
   return f?.beforeReset ? `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>` : "";
 }
 
-function meter(label, bar) {
+function meter(label, bar, cls = "") {
   if (!bar) return "";
   // Shows what is LEFT: the number and the filled bar shrink as usage grows.
   const left = Math.max(0, 100 - bar.pct);
@@ -105,7 +105,7 @@ function meter(label, bar) {
   const filled = Math.round(left / 5);
   const segs = Array.from({ length: 20 }, (_, i) => `<i${i < filled ? ' class="f"' : ""}></i>`).join("");
   const reset = bar.resetsAt ? `<span data-until="${bar.resetsAt}"></span>` : "";
-  return `<div class="meter${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
+  return `<div class="meter${cls}${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
     <div class="row1"><span>${label}</span><span class="pct">${t("pct.left", { n: left })}</span></div>
     <div class="segs">${segs}</div>
     <div class="reset">${reset}</div>${forecastNote(bar)}
@@ -147,9 +147,15 @@ function renderStatus(col, st) {
   el.innerHTML = `<i></i>${cls === "ok" || cls === "unknown" ? "" : `<span>${esc(st.incident || text)}</span>`}`;
 }
 
-function renderUsage(col, usage, error) {
+function accountRow(a) {
+  // A further login of the same tool (e.g. a work account): smaller meters, its name where the trend is.
+  return meter(t("limit.session"), a.session, " small") + meter(t("limit.weekly"), a.weekly, " small") +
+    `<div class="acct"><span class="name">${esc(a.label)}</span><span class="plan">${esc(a.plan)}</span></div>`;
+}
+
+function renderUsage(col, usage, error, accounts = []) {
   // Rebuilding the header every poll forces a layout of the whole column; skip it when unchanged.
-  const sig = JSON.stringify([usage, error]), key = `usage:${col.dataset.tool}`;
+  const sig = JSON.stringify([usage, error, accounts]), key = `usage:${col.dataset.tool}`;
   if (sigs[key] === sig) return;
   sigs[key] = sig;
   $(".plan", col).textContent = usage?.plan || "";
@@ -175,6 +181,7 @@ function renderUsage(col, usage, error) {
   $(".bars", col).innerHTML = usage
     ? meter(t("limit.session"), usage.session) + meter(t("limit.weekly"), usage.weekly) + trend(usage.trend)
     : `<div class="na">${esc(error ? t(`usage.${error}`) : t("usage.none"))}</div>`;
+  $(".bars", col).insertAdjacentHTML("beforeend", accounts.map(accountRow).join(""));
   $(".banner", col).innerHTML = limitBanner(usage);
   fillTimes(col.querySelector(".col-head"));
   fillTimes(col.querySelector(".banner"));
@@ -224,7 +231,8 @@ function updateCosts(col, sessions) {
 
 function renderHealth(col, key, health) {
   // The data format of Claude Code, Codex or OpenUsage changed: warn instead of quietly showing nothing.
-  const detail = health?.[key] || health?.[`openusage:${key}`];
+  const extra = Object.keys(health || {}).find((k) => k.startsWith(`openusage:${key}@`));
+  const detail = health?.[key] || health?.[`openusage:${key}`] || (extra && health[extra]);
   const el = $(".health", col);
   el.textContent = detail ? `⚠ ${t("health.chip")}` : "";
   el.title = detail ? `${detail}. ${t("health.hint")}` : "";
@@ -232,7 +240,7 @@ function renderHealth(col, key, health) {
 
 function renderTool(key, data, usageError, status, health) {
   const col = $(`.col[data-tool="${key}"]`);
-  renderUsage(col, data.usage, usageError);
+  renderUsage(col, data.usage, usageError, data.accounts);
   renderStatus(col, status);
   renderHealth(col, key, health);
   const sessions = [...data.sessions].sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || (b.time - a.time));

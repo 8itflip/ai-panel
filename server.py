@@ -681,26 +681,41 @@ def parse_provider(p, kind):
     }
 
 
+def account_label(p):
+    """Organization of an extra Claude account: "Claude: Acme (me@acme.com)" -> "Acme"."""
+    m = re.match(r"Claude:\s*(.+?)\s*\([^()]*\)\s*$", p.get("displayName") or "")
+    return m.group(1) if m else p.get("plan") or p.get("providerId")
+
+
+def provider_usage(p, pid, kind):
+    u = parse_provider(p, kind)
+    if not u["session"] and not u["weekly"]:
+        format_issue("openusage:" + pid, "OpenUsage returned no Session/Weekly limits")
+    else:
+        _health.pop("openusage:" + pid, None)
+    for window in ("session", "weekly"):
+        bar = u[window]
+        if bar:
+            record_usage("%s:%s" % (pid, window), bar)
+            bar["forecast"] = forecast("%s:%s" % (pid, window), window, bar)
+    return u
+
+
 def usage():
     if time.time() - _usage_cache["at"] < OPENUSAGE_TTL:
         return _usage_cache
     try:
         with urllib.request.urlopen(OPENUSAGE_URL, timeout=2) as r:
             providers = json.load(r)
-        data = {}
+        data = {"claudeAccounts": []}
         for p in providers:
-            pid = p.get("providerId")
+            pid = p.get("providerId") or ""
             if pid in ("claude", "codex"):
-                data[pid] = parse_provider(p, pid)
-                if not data[pid]["session"] and not data[pid]["weekly"]:
-                    format_issue("openusage:" + pid, "OpenUsage returned no Session/Weekly limits")
-                else:
-                    _health.pop("openusage:" + pid, None)
-                for kind in ("session", "weekly"):
-                    bar = data[pid][kind]
-                    if bar:
-                        record_usage("%s:%s" % (pid, kind), bar)
-                        bar["forecast"] = forecast("%s:%s" % (pid, kind), kind, bar)
+                data[pid] = provider_usage(p, pid, pid)
+            elif pid.startswith("claude@"):
+                # Further Claude logins (e.g. from Claude Swap) get their own cards in OpenUsage, ids "claude@<hash>".
+                data["claudeAccounts"].append(dict(provider_usage(p, pid, "claude"), label=account_label(p)))
+        data["claudeAccounts"].sort(key=lambda a: a["label"].lower())
         save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
     except Exception as exc:  # OpenUsage not running or its API changed
@@ -1025,7 +1040,8 @@ def state():
     data = u.get("data") or {}
     return {
         "now": now_ms(),
-        "claude": {"usage": data.get("claude"), "sessions": claude, "error": claude_err},
+        "claude": {"usage": data.get("claude"), "accounts": data.get("claudeAccounts") or [],
+                   "sessions": claude, "error": claude_err},
         "codex": {"usage": data.get("codex"), "sessions": codex, "error": codex_err},
         "usageError": u.get("error"),
         "version": static_version(),
