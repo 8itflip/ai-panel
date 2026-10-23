@@ -141,29 +141,37 @@ h2 {
 /* ---------- tool columns ---------- */
 .col { display: flex; flex-direction: column; }
 .col-head { padding: 1.1rem 1.3rem 0.9rem; border-bottom: 1px solid var(--line); }
-.col-title { display: flex; align-items: baseline; gap: 0.6rem; }
-.col-title h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
-.glyph { font-size: 1.3rem; font-weight: 700; width: 1.6rem; text-align: center; }
+/* Every account (each Claude login, Codex) has the same title row, money on the right, then its meters. */
+.col-title { display: flex; align-items: center; gap: 0.55rem; min-height: 2.4rem; }
+.col-title h1, .col-title h2 {
+  font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; color: var(--ink);
+  text-transform: none; margin: 0; white-space: nowrap;
+}
+.money { margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 0.1rem; min-width: 0; }
+.money > * { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.acct { margin-top: 0.8rem; padding-top: 0.7rem; border-top: 1px solid var(--line); }
+.glyph { font-size: 1.15rem; font-weight: 700; width: 1.6rem; text-align: center; }
 .glyph.claude { color: var(--claude); }
-.glyph.codex { color: var(--codex); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.05rem; }
+.glyph.codex { color: var(--codex); font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.95rem; }
 .plan {
   font-size: 0.75rem; font-weight: 600; color: var(--muted);
   border: 1px solid var(--line); border-radius: 1rem; padding: 0.1rem 0.55rem;
 }
 .plan:empty { display: none; }
-.cost { margin-left: auto; font-size: 0.9rem; color: var(--muted); white-space: nowrap; }
+.cost { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+.cost:empty { display: none; }
 .cost b { color: var(--ink); font-weight: 650; }
 .cost em { font-style: normal; color: var(--wait); font-weight: 650; }
 
-.bars { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: 0.85rem; }
-.meter .row1 { display: flex; align-items: baseline; justify-content: space-between; font-size: 0.85rem; color: var(--muted); }
-.meter .pct { font-size: 1.25rem; font-weight: 700; color: var(--ink); }
+.bars { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; margin-top: 0.5rem; }
+.meter .row1 { display: flex; align-items: baseline; justify-content: space-between; font-size: 0.78rem; color: var(--muted); }
+.meter .pct { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
 .meter.hot .pct { color: var(--warn); }
-.segs { display: grid; grid-template-columns: repeat(20, 1fr); gap: 0.18rem; margin: 0.35rem 0 0.3rem; }
-.segs i { height: 0.55rem; border-radius: 0.12rem; background: var(--track); }
+.segs { display: grid; grid-template-columns: repeat(20, 1fr); gap: 0.15rem; margin: 0.25rem 0 0.2rem; }
+.segs i { height: 0.4rem; border-radius: 0.1rem; background: var(--track); }
 .segs i.f { background: var(--ink); }
 .meter.hot .segs i.f { background: var(--warn); }
-.meter .reset { font-size: 0.78rem; color: var(--faint); }
+.meter .reset { font-size: 0.72rem; color: var(--faint); }
 .bars .na { font-size: 0.85rem; color: var(--faint); grid-column: 1 / -1; }
 
 .sessions { flex: 0 1 auto; min-height: 0; overflow: hidden; padding: 0.4rem 0.6rem; }
@@ -285,7 +293,7 @@ h2 {
 .svc.major { color: var(--wait); }
 .svc span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
 
-.meter .fc { font-size: 0.78rem; color: var(--warn); font-weight: 650; margin-top: 0.1rem; }
+.meter .fc { font-size: 0.72rem; color: var(--warn); font-weight: 650; margin-top: 0.1rem; }
 .meter.out .pct { color: var(--wait); }
 .meter.out .segs i.f { background: var(--wait); }
 .limit-out {
@@ -320,11 +328,10 @@ h2 {
 .pr-group .sum .tag { margin-left: 0; }
 .pr-group .sum .warn { color: var(--warn); }
 .prs .empty.warn { color: var(--warn); font-size: 0.8rem; }
-.meter .pct small { font-size: 0.75rem; font-weight: 500; color: var(--muted); }
+.meter .pct small { font-size: 0.7rem; font-weight: 500; color: var(--muted); }
 
 /* ---------- spend, idle sessions, local changes ---------- */
-.col-title { flex-wrap: wrap; row-gap: 0.1rem; }
-.spend { flex-basis: 100%; text-align: right; font-size: 0.82rem; color: var(--muted); margin-top: -0.1rem; }
+.spend { font-size: 0.76rem; color: var(--muted); white-space: nowrap; }
 .spend:empty { display: none; }
 .spend b { color: var(--ink); font-weight: 650; }
 .spend.warn, .spend.warn b { color: var(--warn); }
@@ -360,7 +367,3 @@ h2 {
   border-radius: 1rem; padding: 0.05rem 0.55rem; white-space: nowrap;
 }
 .health:empty { display: none; }
-/* Further logins of the same tool: a title row like the column's, then their own meters. */
-.acct { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.55rem; margin: 0.2rem 0 -0.6rem; }
-.acct h2 { font-size: 1.1rem; font-weight: 700; color: var(--ink); text-transform: none; letter-spacing: -0.01em; margin: 0; }
-.acct .glyph { font-size: 1.05rem; width: 1.6rem; }
