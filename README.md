@@ -19,6 +19,8 @@ open pull requests with CI status, and service status.
   run out before the reset, and a banner when a limit is exhausted.
   A second Claude login (added to OpenUsage with [Claude Swap](https://github.com/realiti4/claude-swap))
   gets its own row of limits, and the column names both: "Claude - Personal", "Claude - <organization>".
+  When that login runs in a second Claude app made with [Parall](https://parall.app), its cost is counted
+  from its sessions' transcripts and taken off the main account, which OpenUsage would otherwise charge.
 - **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
   API prices. Money you actually pay on top of the subscription (Claude extra usage, Codex credits)
   is shown separately.

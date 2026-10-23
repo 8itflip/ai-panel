@@ -214,6 +214,7 @@ class Tally:
     def __init__(self, ino):
         self.ino, self.offset, self.rest = ino, 0, b""
         self.cost, self.unpriced, self.seen, self.model = 0.0, 0, set(), None
+        self.days = {}  # local date "YYYY-MM-DD" -> cost that day (Claude only)
 
 
 _tallies = {}
@@ -262,7 +263,12 @@ def consume_claude(t, e):
     usd = ((u.get("input_tokens") or 0) * p["i"] + (u.get("output_tokens") or 0) * p["o"]
            + (u.get("cache_read_input_tokens") or 0) * p.get("cr", p["i"])
            + write_5m * p.get("cw", p["i"]) + write_1h * 2 * p["i"]) / 1e6
-    t.cost += usd * (p.get("fast", 1) if u.get("speed") == "fast" else 1)
+    usd *= p.get("fast", 1) if u.get("speed") == "fast" else 1
+    t.cost += usd
+    ms = iso_to_ms(e.get("timestamp"))
+    if ms:
+        day = time.strftime("%Y-%m-%d", time.localtime(ms / 1000))
+        t.days[day] = t.days.get(day, 0) + usd
 
 
 def consume_codex(t, e):
@@ -429,10 +435,65 @@ def parse_claude_transcript(path):
     return {"title": title, "message": message}
 
 
-def claude_cost(sid, tpath):
-    markers = (b'"usage"',)
+def claude_tallies(sid, tpath):
     files = [tpath] + [str(p) for p in Path(tpath).parent.joinpath(sid, "subagents").glob("*.jsonl")]
-    return cost_of(tally(f, consume_claude, markers) for f in files)
+    return [tally(f, consume_claude, (b'"usage"',)) for f in files]
+
+
+def claude_cost(sid, tpath):
+    return cost_of(claude_tallies(sid, tpath))
+
+
+_instance_spend = {"at": 0, "data": {}}
+
+
+def instance_spend():
+    """Today's and 30-day cost of each Parall instance, label -> {"today", "month"}, from its sessions' transcripts.
+
+    OpenUsage only attributes sessions listed by the main Claude app, so these have no cost of their own there."""
+    if time.time() - _instance_spend["at"] < 60:
+        return _instance_spend["data"]
+    days = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in range(30)}
+    today = time.strftime("%Y-%m-%d")
+    cutoff = time.time() - 31 * 86400
+    out = {}
+    if PARALL_DIR.is_dir():
+        for inst in PARALL_DIR.iterdir():
+            today_usd = month_usd = 0.0
+            for f in (inst / "claude-code-sessions").glob("*/*/local_*.json"):
+                try:
+                    if os.stat(f).st_mtime < cutoff:
+                        continue
+                    sid = json.loads(f.read_text()).get("cliSessionId")
+                except (OSError, ValueError):
+                    continue
+                tpath = sid and claude_transcript(sid)
+                for t in claude_tallies(sid, tpath) if tpath else []:
+                    if t:
+                        today_usd += t.days.get(today, 0)
+                        month_usd += sum(v for d, v in t.days.items() if d in days)
+            out[parall_instance(inst.name)[0]] = {"today": round(today_usd, 2), "month": round(month_usd, 2)}
+    _instance_spend.update(at=time.time(), data=out)
+    return out
+
+
+def attribute_spend(main, accounts, spend):
+    """Give extra Claude accounts the cost of their Parall instance (matched by name) and take it off the main one.
+
+    OpenUsage counts sessions it cannot attribute on the default login, i.e. the main card. Accounts that
+    already have their own cost in OpenUsage are left as they are."""
+    if len(accounts) == 1 and len(spend) == 1:
+        pairs = [(accounts[0], next(iter(spend.values())))]
+    else:
+        pairs = [(a, spend[a["label"]]) for a in accounts if a["label"] in spend]
+    for a, s in pairs:
+        if a["month"] is not None:
+            continue
+        a.update(s, multiple=multiple(s["month"], "claude", a["plan"]))
+        if main and main["month"] is not None:
+            main["today"] = round(max(0, (main["today"] or 0) - s["today"]), 2)
+            main["month"] = round(max(0, main["month"] - s["month"]), 2)
+            main["multiple"] = multiple(main["month"], "claude", main["plan"])
 
 
 def claude_sessions():
@@ -651,6 +712,12 @@ def extra_usage(line):
     return {"used": line.get("used") or 0, "limit": line.get("limit")}
 
 
+def multiple(month, kind, plan):
+    """30-day cost as a multiple of the subscription price."""
+    price = PLAN_PRICES.get(kind, {}).get((plan or "").lower())
+    return round(month / price, 1) if month is not None and price else None
+
+
 def parse_provider(p, kind):
     lines = {l.get("label"): l for l in p.get("lines") or []}
 
@@ -662,7 +729,6 @@ def parse_provider(p, kind):
         return {"pct": round(100.0 * (l.get("used") or 0) / limit), "resetsAt": iso_to_ms(l.get("resetsAt"))}
 
     plan = p.get("plan") or ""
-    price = PLAN_PRICES.get(kind, {}).get(plan.lower())
     month = money((lines.get("Last 30 Days") or {}).get("value"))
     return {
         "plan": plan,
@@ -671,7 +737,7 @@ def parse_provider(p, kind):
         "todayTokens": tokens((lines.get("Today") or {}).get("value")),
         "today": money((lines.get("Today") or {}).get("value")),
         "month": month,
-        "multiple": round(month / price, 1) if month is not None and price else None,
+        "multiple": multiple(month, kind, plan),
         "fetchedAt": iso_to_ms(p.get("fetchedAt")),
         # Real money on top of the subscription: paid extra usage (Claude) and the credit balance (Codex).
         "extra": extra_usage(lines.get("Extra usage spent")),
@@ -720,6 +786,8 @@ def usage():
                 # Further Claude logins (e.g. from Claude Swap) get their own cards in OpenUsage, ids "claude@<hash>".
                 data["claudeAccounts"].append(dict(provider_usage(p, pid, "claude"), label=account_label(p)))
         data["claudeAccounts"].sort(key=lambda a: (a["label"] or "").lower())
+        if data["claudeAccounts"]:
+            attribute_spend(data.get("claude"), data["claudeAccounts"], instance_spend())
         save_history()
         _usage_cache.update(at=time.time(), data=data, error=None)
     except Exception as exc:  # OpenUsage not running or its API changed
