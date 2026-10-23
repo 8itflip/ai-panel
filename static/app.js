@@ -295,7 +295,7 @@ function renderMeeting(events) {
   const now = Date.now();
   const e = events.find((x) => x.start - now <= MEETING_LEAD_MIN * 60000 && now - x.start <= MEETING_LEAD_MIN * 60000);
   const box = $("#meeting");
-  if (!e) { box.innerHTML = ""; box.hidden = true; return null; }
+  if (!e) { box.innerHTML = ""; box.className = ""; box.hidden = true; return null; }
   const mins = Math.round((e.start - now) / 60000);
   const when = mins > 0 ? t("meet.in", { n: mins }) : mins === 0 ? t("meet.now") : t("meet.since", { n: -mins });
   box.hidden = false;
