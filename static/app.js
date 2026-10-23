@@ -88,7 +88,7 @@ function tickClock() {
   fillTimes();
 }
 
-/* ---------- column headers: limits, forecast, trend, status ---------- */
+/* ---------- column headers: limits, forecast, status ---------- */
 
 function forecastNote(bar) {
   // Only when the current pace runs out before the reset; otherwise it is noise.
@@ -96,7 +96,7 @@ function forecastNote(bar) {
   return f?.beforeReset ? `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>` : "";
 }
 
-function meter(label, bar, cls = "") {
+function meter(label, bar) {
   if (!bar) return "";
   // Shows what is LEFT: the number and the filled bar shrink as usage grows.
   const left = Math.max(0, 100 - bar.pct);
@@ -105,22 +105,11 @@ function meter(label, bar, cls = "") {
   const filled = Math.round(left / 5);
   const segs = Array.from({ length: 20 }, (_, i) => `<i${i < filled ? ' class="f"' : ""}></i>`).join("");
   const reset = bar.resetsAt ? `<span data-until="${bar.resetsAt}"></span>` : "";
-  return `<div class="meter${cls}${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
+  return `<div class="meter${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
     <div class="row1"><span>${label}</span><span class="pct">${t("pct.left", { n: left })}</span></div>
     <div class="segs">${segs}</div>
     <div class="reset">${reset}</div>${forecastNote(bar)}
   </div>`;
-}
-
-function trend(points) {
-  if (!points?.length) return "";
-  const max = Math.max(...points.map((p) => p.value), 1);
-  const bars = points.map((p, i) => {
-    const h = Math.max(4, Math.round((p.value / max) * 100));
-    const tip = `${p.label}: ${t("tokens", { n: tokensLabel(p.value) })}`;
-    return `<i style="height:${h}%"${i === points.length - 1 ? ' class="today"' : ""} title="${esc(tip)}"></i>`;
-  }).join("");
-  return `<div class="trend"><div class="row1"><span>${t("trend.days", { n: points.length })}</span></div><div class="tbars">${bars}</div></div>`;
 }
 
 function limitBanner(usage) {
@@ -147,10 +136,14 @@ function renderStatus(col, st) {
   el.innerHTML = `<i></i>${cls === "ok" || cls === "unknown" ? "" : `<span>${esc(st.incident || text)}</span>`}`;
 }
 
-function accountRow(a) {
-  // A further login of the same tool (e.g. a work account): smaller meters, its name where the trend is.
-  return meter(t("limit.session"), a.session, " small") + meter(t("limit.weekly"), a.weekly, " small") +
-    `<div class="acct"><span class="name">${esc(a.label)}</span><span class="plan">${esc(a.plan)}</span></div>`;
+// A personal plan has no organization name of its own (label null).
+const accountName = (u) => u?.label || t("account.personal");
+
+function accountRow(a, col) {
+  // A further login of the same tool (e.g. a work account), titled like the column.
+  const glyph = $(".glyph", col).outerHTML, tool = $("h1", col).dataset.name;
+  return `<div class="acct">${glyph}<h2>${esc(`${tool} - ${accountName(a)}`)}</h2><span class="plan">${esc(a.plan)}</span></div>` +
+    meter(t("limit.session"), a.session) + meter(t("limit.weekly"), a.weekly);
 }
 
 function renderUsage(col, usage, error, accounts = []) {
@@ -158,6 +151,8 @@ function renderUsage(col, usage, error, accounts = []) {
   const sig = JSON.stringify([usage, error, accounts]), key = `usage:${col.dataset.tool}`;
   if (sigs[key] === sig) return;
   sigs[key] = sig;
+  const h1 = $("h1", col);
+  h1.textContent = accounts.length ? `${h1.dataset.name} - ${accountName(usage)}` : h1.dataset.name;
   $(".plan", col).textContent = usage?.plan || "";
   const cost = $(".cost", col);
   if (usage && usage.month != null) {
@@ -179,9 +174,9 @@ function renderUsage(col, usage, error, accounts = []) {
     spend.textContent = "";
   }
   $(".bars", col).innerHTML = usage
-    ? meter(t("limit.session"), usage.session) + meter(t("limit.weekly"), usage.weekly) + trend(usage.trend)
+    ? meter(t("limit.session"), usage.session) + meter(t("limit.weekly"), usage.weekly)
     : `<div class="na">${esc(error ? t(`usage.${error}`) : t("usage.none"))}</div>`;
-  $(".bars", col).insertAdjacentHTML("beforeend", accounts.map(accountRow).join(""));
+  $(".bars", col).insertAdjacentHTML("beforeend", accounts.map((a) => accountRow(a, col)).join(""));
   $(".banner", col).innerHTML = limitBanner(usage);
   fillTimes(col.querySelector(".col-head"));
   fillTimes(col.querySelector(".banner"));

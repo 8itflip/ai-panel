@@ -275,7 +275,7 @@ h2 {
 .tag.good { color: var(--done); border-color: var(--done); }
 .prs .more, .prs .empty { font-size: 0.85rem; }
 
-/* ---------- column header: status, trend, forecast, exhausted limit ---------- */
+/* ---------- column header: status, forecast, exhausted limit ---------- */
 .svc { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; min-width: 0; }
 .svc i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--faint); flex: none; }
 .svc.ok i { background: var(--done); }
@@ -285,12 +285,6 @@ h2 {
 .svc.major { color: var(--wait); }
 .svc span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
 
-.bars { grid-template-columns: 1fr 1fr 8.5rem; gap: 1.2rem; }
-.trend { display: flex; flex-direction: column; }
-.trend .row1 { font-size: 0.85rem; color: var(--muted); }
-.tbars { flex: 1; display: flex; align-items: flex-end; gap: 0.15rem; margin-top: 0.35rem; min-height: 2.2rem; }
-.tbars i { flex: 1; background: var(--track); border-radius: 0.12rem 0.12rem 0 0; min-height: 0.15rem; }
-.tbars i.today { background: var(--ink); }
 .meter .fc { font-size: 0.78rem; color: var(--warn); font-weight: 650; margin-top: 0.1rem; }
 .meter.out .pct { color: var(--wait); }
 .meter.out .segs i.f { background: var(--wait); }
@@ -366,7 +360,7 @@ h2 {
   border-radius: 1rem; padding: 0.05rem 0.55rem; white-space: nowrap;
 }
 .health:empty { display: none; }
-.meter.small .pct { font-size: 1rem; }
-.meter.small .segs i { height: 0.4rem; }
-.acct { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.3rem; min-width: 0; }
-.acct .name { font-size: 0.9rem; font-weight: 650; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Further logins of the same tool: a title row like the column's, then their own meters. */
+.acct { grid-column: 1 / -1; display: flex; align-items: center; gap: 0.55rem; margin: 0.2rem 0 -0.6rem; }
+.acct h2 { font-size: 1.1rem; font-weight: 700; color: var(--ink); text-transform: none; letter-spacing: -0.01em; margin: 0; }
+.acct .glyph { font-size: 1.05rem; width: 1.6rem; }

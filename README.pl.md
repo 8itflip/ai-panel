@@ -17,7 +17,7 @@ Działa w całości lokalnie, bez zależności (Python 3 ze standardową bibliot
 | Limity 5 h / tygodniowe, koszty | API OpenUsage: `http://127.0.0.1:6736/v1/usage` |
 | Limity kolejnych kont Claude | API OpenUsage (j.w.): providery `claude@…`, które OpenUsage tworzy dla kont z Claude Swap |
 | Kalendarz | aplikacja Kalendarz (EventKit) → `bin/calendar-helper` → `~/Library/Caches/ai-panel/calendar.json` |
-| Trend 14 dni, koszt i tokeny dziś | API OpenUsage (j.w.) |
+| Koszt i tokeny dziś | API OpenUsage (j.w.) |
 | Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |
 | Lokalne zmiany | `git status` (bez blokady indeksu) w repozytoriach aktywnych sesji, co minutę |
 | Pull requesty i CI | `gh api graphql` co 2 min: Twoje otwarte PR-y + PR-y czekające na Twoje review |

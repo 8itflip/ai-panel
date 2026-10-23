@@ -14,14 +14,13 @@ def _session(i, tool, name, project, state, message, ago, cost, detail=None, ins
     }
 
 
-def _usage(plan, session_pct, weekly_pct, today, month, multiple, trend, reset_in, forecast=None):
+def _usage(plan, session_pct, weekly_pct, today, month, multiple, today_tokens, reset_in, forecast=None):
     now = int(time.time() * 1000)
     return {
         "plan": plan,
         "session": {"pct": session_pct, "resetsAt": now + reset_in, "forecast": forecast},
         "weekly": {"pct": weekly_pct, "resetsAt": now + 4 * 24 * HOUR, "forecast": None},
-        "trend": [{"label": "d%d" % i, "value": v * 1e6} for i, v in enumerate(trend)],
-        "todayTokens": trend[-1] * 1e6, "today": today, "month": month, "multiple": multiple,
+        "todayTokens": today_tokens * 1e6, "today": today, "month": month, "multiple": multiple,
     }
 
 
@@ -71,11 +70,9 @@ def state():
         ("Dark mode for dashboard", "web-shop", 341, "success", None, False, False),
         ("Release notes 2.4", "docs", 57, None, None, True, False),
     ]
-    claude_usage = _usage("Max", 72, 41, 48.2, 912.0, 9.1,
-                          [40, 55, 38, 70, 64, 20, 15, 80, 92, 61, 75, 88, 66, 58], 95 * MIN,
-                          {"eta": now + 70 * MIN, "beforeReset": True})
+    claude_usage = _usage("Max", 72, 41, 48.2, 912.0, 9.1, 58, 95 * MIN, {"eta": now + 70 * MIN, "beforeReset": True})
     claude_usage["extra"] = {"used": 12.40, "limit": 50}
-    codex_usage = _usage("Plus", 23, 12, 3.1, 64.0, 3.2, [5, 8, 3, 12, 9, 0, 0, 14, 11, 7, 10, 13, 6, 9], 3 * HOUR)
+    codex_usage = _usage("Plus", 23, 12, 3.1, 64.0, 3.2, 9, 3 * HOUR)
     codex_usage["credits"] = 18.50
     return {
         "now": now,
@@ -85,7 +82,7 @@ def state():
         ], "error": None},
         "claude": {
             "usage": claude_usage,
-            "accounts": [dict(_usage("Team", 18, 34, 0, 0, None, [0], 4 * HOUR), label="Acme Corp")],
+            "accounts": [dict(_usage("Team", 18, 34, 0, 0, None, 0, 4 * HOUR), label="Acme Corp")],
             "sessions": claude, "error": None,
         },
         "codex": {

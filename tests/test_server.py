@@ -273,7 +273,7 @@ class OpenUsageAccounts(Temp):
     def setUp(self):
         super().setUp()
         providers = [
-            {"providerId": "claude", "plan": "Pro", "displayName": "Claude: Personal (me@example.com)",
+            {"providerId": "claude", "plan": "Pro", "displayName": "Claude: me@example.com's Organization (me@example.com)",
              "lines": [{"label": "Session", "type": "progress", "used": 40, "limit": 100}]},
             {"providerId": "claude@1a2b", "plan": "Team", "displayName": "Claude: Zeta Corp (me@zeta.example)",
              "lines": [{"label": "Weekly", "type": "progress", "used": 25, "limit": 100}]},
@@ -297,6 +297,7 @@ class OpenUsageAccounts(Temp):
     def test_extra_claude_logins_are_listed_by_organization(self):
         data = server.usage()["data"]
         self.assertEqual(data["claude"]["session"]["pct"], 40)
+        self.assertIsNone(data["claude"]["label"])  # a personal plan: the page names it itself
         accounts = data["claudeAccounts"]
         self.assertEqual([(a["label"], a["plan"]) for a in accounts], [("Acme (Labs)", "Max"), ("Zeta Corp", "Team")])
         self.assertEqual(accounts[1]["weekly"]["pct"], 25)

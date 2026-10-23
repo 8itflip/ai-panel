@@ -18,10 +18,10 @@ open pull requests with CI status, and service status.
 - **Usage limits**: how much is left of the 5-hour and weekly limits, with reset time, a forecast when the current pace would
   run out before the reset, and a banner when a limit is exhausted.
   A second Claude login (added to OpenUsage with [Claude Swap](https://github.com/realiti4/claude-swap))
-  gets its own smaller row of limits under the organization name.
+  gets its own row of limits, and the column names both: "Claude - Personal", "Claude - <organization>".
 - **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
-  API prices. A 14-day token trend in each column header. Money you actually pay on top of the
-  subscription (Claude extra usage, Codex credits) is shown separately.
+  API prices. Money you actually pay on top of the subscription (Claude extra usage, Codex credits)
+  is shown separately.
 - **Idle sessions**: Claude sessions idle for 2+ days are dimmed, with their count and memory use.
 - **Local changes**: repositories of active sessions with uncommitted files or unpushed commits.
 - **Calendar**: upcoming meetings from macOS Calendar, with a "Join" bar 10 minutes before a meeting
