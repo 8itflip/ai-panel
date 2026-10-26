@@ -22,10 +22,12 @@ Działa w całości lokalnie, bez zależności (Python 3 ze standardową bibliot
 | Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |
 | Lokalne zmiany | `git status` (bez blokady indeksu) w repozytoriach aktywnych sesji, co minutę |
 | Pull requesty i CI | `gh api graphql` co 2 min: Twoje otwarte PR-y + PR-y czekające na Twoje review |
+| Merge requesty z GitLaba | `glab api graphql` co 2 min, dla grup z hostem GitLaba w `config.json` (to samo: Twoje + do review) |
 | Status usług | publiczne `status.claude.com` i `status.openai.com` (`/api/v2/summary.json`) co 2 min |
 
 Kliknięcie: sesja → aplikacja Claude/Codex (właściwa instancja, także z Parall), PR → przeglądarka,
 spotkanie z linkiem → Teams/Meet. Klient podaje tylko, co otworzyć; adres zawsze pochodzi z danych serwera.
+Pasek „Dołącz” nad kalendarzem pojawia się 10 minut przed spotkaniem i znika 10 minut po jego rozpoczęciu.
 
 Statusy:
 - **Czeka na Ciebie**: Claude zgłasza `waitingFor` (zgoda, pytanie), albo ostatnia odpowiedź agenta kończy się pytajnikiem („Pytanie do Ciebie”).
@@ -49,7 +51,8 @@ w `server.py`). Aplikacja Claude usypia bezczynne sesje po ok. 30 minutach; pane
 
 Okno kiosku (`bin/AI Panel Kiosk.app`, mały program z WebKitem, ok. 180 MB zamiast całej przeglądarki)
 startuje przy logowaniu, pojawia się po podłączeniu monitora panelu i znika po jego odłączeniu.
-Zakrywa cały ekran, łącznie z paskiem menu. Główny ekran nigdy nie jest brany.
+Zakrywa cały ekran, łącznie z paskiem menu. Gdy inna aplikacja otworzy okno na tym ekranie, kiosk
+chowa się pod nie, dopóki okno nie zostanie zamknięte albo przeniesione.
 
 Który monitor — w lokalnym pliku `kiosk.conf` (poza gitem), nazwa jak w Ustawieniach → Wyświetlacze:
 
@@ -58,7 +61,9 @@ SCREEN_NAME="M14"
 PANEL_LANG="pl"   # opcjonalnie: wymusza język panelu (domyślnie język systemu)
 ```
 
-Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1). Układ skaluje się
+Bez `kiosk.conf` wybierany jest pierwszy podłużny ekran (proporcje > 2:1), nigdy główny. Ekran nazwany
+w `kiosk.conf` zostaje w użyciu, także gdy stanie się główny (np. po odłączeniu dużego monitora); wtedy
+kiosk zostawia widoczny pasek menu. Jedynego ekranu kiosk nigdy nie zajmuje. Układ skaluje się
 do dowolnej rozdzielczości; projektowany pod 1920×720 i 1920×1080.
 
 Grupy PR-ów: skopiuj `config.example.json` do `config.json` (plik lokalny, poza gitem). Grupa to
