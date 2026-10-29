@@ -32,11 +32,11 @@ jobs:
       - name: Server and UI tests
         run: python3 -m unittest discover -s tests -v
 
-      - name: Translation tests
-        run: node --test tests/i18n.test.mjs
+      - name: Translation and Stream Deck plugin tests
+        run: node --test tests/i18n.test.mjs tests/streamdeck.test.mjs
 
       - name: JavaScript syntax
-        run: for f in static/*.js; do node --check "$f"; done
+        run: for f in static/*.js streamdeck/*.sdPlugin/*.js; do node --check "$f"; done
 
       - name: Swift builds
         run: ./calendar/build.sh && ./kiosk/build.sh

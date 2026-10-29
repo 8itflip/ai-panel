@@ -1,0 +1,165 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "AI Panel Desk",
+  "Version": "1.0.0.0",
+  "Author": "8itflip",
+  "Description": "AI Panel on Stream Deck keys: waiting sessions, usage limits, the next meeting, plus desk toggles.",
+  "URL": "https://github.com/8itflip/ai-panel",
+  "UUID": "local.ai-panel.desk",
+  "Icon": "icons/plugin",
+  "Category": "AI Panel",
+  "CategoryIcon": "icons/category",
+  "CodePath": "plugin.js",
+  "Nodejs": {
+    "Version": "24"
+  },
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.9"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    }
+  ],
+  "Actions": [
+    {
+      "UUID": "local.ai-panel.desk.waiting",
+      "Name": "Waiting sessions",
+      "Tooltip": "Claude and Codex sessions waiting for you; press to open the one that has waited longest",
+      "Icon": "icons/waiting",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "icons/waiting",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "local.ai-panel.desk.limits",
+      "Name": "Usage limit",
+      "Tooltip": "5-hour limit of an account with its reset time; press to show the next account",
+      "Icon": "icons/limits",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "icons/limits",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "local.ai-panel.desk.meeting",
+      "Name": "Next meeting",
+      "Tooltip": "Your next meeting; turns green in the join window, press to join",
+      "Icon": "icons/meeting",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "icons/meeting",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "local.ai-panel.desk.mic",
+      "Name": "Microphone mute",
+      "Tooltip": "Mutes and unmutes the system microphone",
+      "Icon": "icons/mic",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "icons/mic",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "local.ai-panel.desk.kube",
+      "Name": "Kube context",
+      "Tooltip": "Shows the current kubectl context; press to switch to the next favourite context",
+      "Icon": "icons/kube",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "icons/kube",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false,
+      "PropertyInspectorPath": "pi.html"
+    },
+    {
+      "UUID": "local.ai-panel.desk.amphetamine",
+      "Name": "Amphetamine",
+      "Tooltip": "Starts or ends an Amphetamine session",
+      "Icon": "icons/amphetamine",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": false,
+      "States": [
+        {
+          "Image": "icons/amphetamine",
+          "ShowTitle": false
+        }
+      ],
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "local.ai-panel.desk.run",
+      "Name": "Run command",
+      "Tooltip": "Runs a shell command in the background",
+      "Icon": "icons/run",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "icons/run",
+          "ShowTitle": true
+        }
+      ],
+      "PropertyInspectorPath": "pi.html"
+    },
+    {
+      "UUID": "local.ai-panel.desk.terminal",
+      "Name": "Terminal command",
+      "Tooltip": "Opens a terminal window that runs a command",
+      "Icon": "icons/terminal",
+      "Controllers": [
+        "Keypad"
+      ],
+      "SupportedInMultiActions": true,
+      "States": [
+        {
+          "Image": "icons/terminal",
+          "ShowTitle": true
+        }
+      ],
+      "PropertyInspectorPath": "pi.html"
+    }
+  ]
+}
