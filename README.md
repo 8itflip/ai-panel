@@ -91,6 +91,29 @@ launchctl kickstart -k gui/$UID/local.ai-panel.server
 
 `./uninstall.sh` removes the agents. Logs are in `~/Library/Logs/ai-panel/`.
 
+### Stream Deck keys (optional)
+
+`streamdeck/` holds a Stream Deck plugin (plain Node, no dependencies) that puts panel data on keys:
+
+| Key | Shows | Press |
+|---|---|---|
+| Waiting sessions | sessions waiting for you (red) or working | opens the one that has waited longest |
+| Usage limit | 5-hour limit, reset time and weekly use | shows the next account (Claude logins, Codex) |
+| Next meeting | time and title; green in the join window | joins the meeting |
+| Microphone mute | whether the system microphone is muted | mutes or unmutes it |
+| Kube context | current kubectl context; red for `prd`/`prod` | moves to the next of your favourite contexts |
+| Amphetamine | whether a session keeps the Mac awake | starts or ends a session |
+| Run command / Terminal command | your title and icon | runs a command in the background or in a terminal window (Ghostty when installed) |
+
+```bash
+./streamdeck/install.sh              # links the plugin into Stream Deck and restarts the app
+./streamdeck/install.sh --uninstall
+```
+
+The keys appear under "AI Panel" in the Stream Deck action list. Labels follow the system language
+(English or Polish). The plugin talks only to the panel on localhost, and opens sessions and meetings
+through the same `/api/open` endpoint as the page.
+
 ## Privacy
 
 Everything runs locally. The server reads local files (Claude Code sessions in `~/.claude`, the Codex
@@ -114,7 +137,7 @@ Tests (no dependencies; the UI smoke test uses headless Chrome when it is instal
 
 ```bash
 python3 -m unittest discover -s tests
-node --test tests/i18n.test.mjs
+node --test tests/i18n.test.mjs tests/streamdeck.test.mjs
 ```
 
 GitHub Actions runs them on every push, together with a JavaScript syntax check and both Swift builds.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { background: #2d2d2d; color: #d8d8d8; font: 12px -apple-system, sans-serif; margin: 8px 12px; }
+  label { display: block; margin: 6px 0 4px; color: #969696; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 52px; padding: 6px; border: 0; border-radius: 3px;
+    background: #3d3d3d; color: #d8d8d8; font: 12px ui-monospace, monospace; resize: vertical; }
+  p { color: #969696; margin: 6px 0; }
+</style>
+</head>
+<body>
+<label for="value"></label>
+<textarea id="value" spellcheck="false"></textarea>
+<p id="hint"></p>
+<script>
+  // Property inspector for the keys that need one text setting: a command, or the favourite kube contexts.
+  const FIELDS = {
+    run: ["command", "Command", "Runs in the background with your login shell, e.g. open shottr://grab/area"],
+    terminal: ["command", "Command", "Opens a terminal window that runs it, e.g. ssh my-server"],
+    kube: ["contexts", "Contexts", "Favourite contexts, separated by spaces or commas; each press moves to the next one"],
+  };
+
+  // Stream Deck calls this when the inspector opens.
+  function connectElgatoStreamDeckSocket(port, uuid, registerEvent, info, actionInfo) {
+    const action = JSON.parse(actionInfo);
+    const [field, label, hint] = FIELDS[action.action.split(".").pop()];
+    let settings = action.payload.settings || {};
+    const input = document.getElementById("value");
+    document.querySelector("label").textContent = label;
+    document.getElementById("hint").textContent = hint;
+    input.value = settings[field] || "";
+    const ws = new WebSocket(`ws://127.0.0.1:${port}`);
+    ws.onopen = () => ws.send(JSON.stringify({ event: registerEvent, uuid }));
+    input.addEventListener("input", () => {
+      settings = { ...settings, [field]: input.value.trim() };
+      ws.send(JSON.stringify({ event: "setSettings", context: uuid, payload: settings }));
+    });
+  }
+</script>
+</body>
+</html>
