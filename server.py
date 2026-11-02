@@ -401,11 +401,17 @@ def pid_alive(pid):
         return True
 
 
+def claude_project_dirs():
+    """Transcript folders of every Claude login: ~/.claude and further config dirs such as ~/.claude-work,
+    which a second Claude app (Parall) or a CLAUDE_CONFIG_DIR login writes to."""
+    return [CLAUDE_PROJECTS] + sorted(HOME.glob(".claude-*/projects"))
+
+
 def claude_transcript(session_id):
     path = _transcript_paths.get(session_id)
     if path and os.path.exists(path):
         return path
-    hits = list(CLAUDE_PROJECTS.glob("*/%s.jsonl" % session_id))
+    hits = [h for d in claude_project_dirs() for h in d.glob("*/%s.jsonl" % session_id)]
     path = str(hits[0]) if hits else None
     _transcript_paths[session_id] = path
     return path
@@ -448,18 +454,27 @@ _instance_spend = {"at": 0, "data": {}}
 
 
 def instance_spend():
-    """Today's and 30-day cost of each Parall instance, label -> {"today", "month"}, from its sessions' transcripts.
+    """Today's and 30-day cost of each Parall instance, label -> {"today", "month", "shared": {"today", "month"}}.
 
-    OpenUsage only attributes sessions listed by the main Claude app, so these have no cost of their own there."""
+    An instance's login writes either to its own config dir (e.g. ~/.claude-work: every transcript there is
+    that login's) or, in newer Claude apps, to the shared ~/.claude. "shared" is the part in ~/.claude, which
+    OpenUsage charges to the main account."""
     if time.time() - _instance_spend["at"] < 60:
         return _instance_spend["data"]
     days = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in range(30)}
     today = time.strftime("%Y-%m-%d")
     cutoff = time.time() - 31 * 86400
+
+    def add(total, tallies):
+        for t in tallies:
+            if t:
+                total["today"] += t.days.get(today, 0)
+                total["month"] += sum(v for d, v in t.days.items() if d in days)
+
     out = {}
     if PARALL_DIR.is_dir():
         for inst in PARALL_DIR.iterdir():
-            today_usd = month_usd = 0.0
+            total, shared, own_dirs = {"today": 0.0, "month": 0.0}, {"today": 0.0, "month": 0.0}, set()
             for f in (inst / "claude-code-sessions").glob("*/*/local_*.json"):
                 try:
                     if os.stat(f).st_mtime < cutoff:
@@ -468,31 +483,36 @@ def instance_spend():
                 except (OSError, ValueError):
                     continue
                 tpath = sid and claude_transcript(sid)
-                for t in claude_tallies(sid, tpath) if tpath else []:
-                    if t:
-                        today_usd += t.days.get(today, 0)
-                        month_usd += sum(v for d, v in t.days.items() if d in days)
-            out[parall_instance(inst.name)[0]] = {"today": round(today_usd, 2), "month": round(month_usd, 2)}
+                if not tpath:
+                    continue
+                if Path(tpath).parent.parent == CLAUDE_PROJECTS:
+                    add(shared, claude_tallies(sid, tpath))
+                else:
+                    own_dirs.add(Path(tpath).parent.parent)
+            for d in own_dirs:  # sessions, subagents and CLI runs of this login alike
+                add(total, (tally(str(f), consume_claude, (b'"usage"',)) for f in d.rglob("*.jsonl")
+                            if os.stat(f).st_mtime >= cutoff))
+            rounded = lambda x: {k: round(v, 2) for k, v in x.items()}
+            out[parall_instance(inst.name)[0]] = dict(rounded({k: total[k] + shared[k] for k in total}),
+                                                      shared=rounded(shared))
     _instance_spend.update(at=time.time(), data=out)
     return out
 
 
 def attribute_spend(main, accounts, spend):
-    """Give extra Claude accounts the cost of their Parall instance (matched by name) and take it off the main one.
+    """Give extra Claude accounts the cost of their Parall instance (matched by name) and take the part
+    OpenUsage counted on the main account (transcripts in the shared ~/.claude) off the main card.
 
-    OpenUsage counts sessions it cannot attribute on the default login, i.e. the main card. Accounts that
-    already have their own cost in OpenUsage are left as they are."""
+    The instance's own config dir is what OpenUsage reports for the account, so its total replaces that."""
     if len(accounts) == 1 and len(spend) == 1:
         pairs = [(accounts[0], next(iter(spend.values())))]
     else:
         pairs = [(a, spend[a["label"]]) for a in accounts if a["label"] in spend]
     for a, s in pairs:
-        if a["month"] is not None:
-            continue
-        a.update(s, multiple=multiple(s["month"], "claude", a["plan"]))
+        a.update(today=s["today"], month=s["month"], multiple=multiple(s["month"], "claude", a["plan"]))
         if main and main["month"] is not None:
-            main["today"] = round(max(0, (main["today"] or 0) - s["today"]), 2)
-            main["month"] = round(max(0, main["month"] - s["month"]), 2)
+            main["today"] = round(max(0, (main["today"] or 0) - s["shared"]["today"]), 2)
+            main["month"] = round(max(0, main["month"] - s["shared"]["month"]), 2)
             main["multiple"] = multiple(main["month"], "claude", main["plan"])
 
 
@@ -726,16 +746,23 @@ def parse_provider(p, kind):
         if not l or l.get("type") != "progress":
             return None
         limit = l.get("limit") or 100
-        return {"pct": round(100.0 * (l.get("used") or 0) / limit), "resetsAt": iso_to_ms(l.get("resetsAt"))}
+        return {"pct": round(100.0 * (l.get("used") or 0) / limit), "resetsAt": iso_to_ms(l.get("resetsAt")),
+                "windowMs": l.get("periodDurationMs")}
 
     plan = p.get("plan") or ""
     month = money((lines.get("Last 30 Days") or {}).get("value"))
+    # Model-specific weekly limits (e.g. "Fable") are further percent bars beside Session and Weekly.
+    models = [dict(bar(l["label"]), label=l["label"]) for l in p.get("lines") or []
+              if l.get("type") == "progress" and (l.get("format") or {}).get("kind") == "percent"
+              and l.get("label") not in ("Session", "Weekly")]
     return {
         "plan": plan,
         "session": bar("Session"),
         "weekly": bar("Weekly"),
+        "models": models,
         "todayTokens": tokens((lines.get("Today") or {}).get("value")),
-        "today": money((lines.get("Today") or {}).get("value")),
+        # OpenUsage leaves the Today line out on a day without usage; with a 30-day figure that means $0.
+        "today": money((lines.get("Today") or {}).get("value")) if "Today" in lines or month is None else 0.0,
         "month": month,
         "multiple": multiple(month, kind, plan),
         "fetchedAt": iso_to_ms(p.get("fetchedAt")),
@@ -757,6 +784,7 @@ def account_label(p):
 
 def provider_usage(p, pid, kind):
     u = parse_provider(p, kind)
+    u["providerId"] = pid
     if not u["session"] and not u["weekly"]:
         format_issue("openusage:" + pid, "OpenUsage returned no Session/Weekly limits")
     else:
@@ -766,6 +794,10 @@ def provider_usage(p, pid, kind):
         if bar:
             record_usage("%s:%s" % (pid, window), bar)
             bar["forecast"] = forecast("%s:%s" % (pid, window), window, bar)
+    for bar in u["models"]:
+        key = "%s:weekly:%s" % (pid, bar["label"])
+        record_usage(key, bar)
+        bar["forecast"] = forecast(key, "weekly", bar)
     return u
 
 
@@ -843,6 +875,24 @@ def forecast(key, kind, bar):
         return {"eta": None, "beforeReset": False}
     eta = int(now_ms() + (100 - bar["pct"]) / rate)
     return {"eta": eta, "beforeReset": bool(bar.get("resetsAt")) and eta < bar["resetsAt"]}
+
+
+def window_pace(bar):
+    """The window's average pace so far: expected and projected use at reset, and when it runs out at that pace.
+
+    Needs no history, unlike forecast(); None in the first minutes of a window, which say little about its pace."""
+    span, reset = bar.get("windowMs"), bar.get("resetsAt")
+    if not span or not reset:
+        return None
+    now = now_ms()
+    elapsed = span - (reset - now)
+    if not max(10 * 60e3, span / 50) <= elapsed <= span:
+        return None
+    out = {"expected": round(100.0 * elapsed / span), "projected": round(bar["pct"] * span / float(elapsed))}
+    if bar["pct"] >= 100:
+        return dict(out, exhausted=True)
+    eta = int(now + (100 - bar["pct"]) * elapsed / bar["pct"]) if bar["pct"] > 0 else None
+    return dict(out, eta=eta, beforeReset=eta is not None and eta < reset)
 
 
 # ---------- data refreshed in the background (GitHub, GitLab, status, git) ----------
@@ -1098,6 +1148,36 @@ def static_version():
     return max(int(f.stat().st_mtime) for f in STATIC.iterdir() if f.suffix in STATIC_TYPES)
 
 
+def subscriptions(data):
+    """One card per OpenUsage account: its limit windows and API-equivalent cost.
+
+    Optional `subscriptionLabels` in config.json names accounts by OpenUsage provider id ("claude", "claude@<hash>",
+    "codex"); otherwise the card is named after the tool and plan."""
+    labels = CONFIG.get("subscriptionLabels") or {}
+    found = [("claude", data.get("claude"))] + [(a.get("providerId"), a) for a in data.get("claudeAccounts") or []]
+    found.append(("codex", data.get("codex")))
+    cards = []
+    for pid, u in found:
+        if not u:
+            continue
+        bars = [dict(u[kind], label=kind) for kind in ("session", "weekly") if u[kind]] + u["models"]
+        windows = [dict(label=b["label"], usedPercent=b["pct"], resetsAt=b["resetsAt"], forecast=b.get("forecast"),
+                        pace=window_pace(b)) for b in bars]
+        stale = bool(u["fetchedAt"]) and now_ms() - u["fetchedAt"] > 20 * 60e3
+        # "Max 5x" is just "Max" now; the multiplier is no longer part of the plan's name.
+        plan = re.sub(r"\s+\d+x$", "", u["plan"] or "", flags=re.I)
+        name = " ".join(x for x in ("Codex" if pid == "codex" else "Claude", plan) if x)
+        cards.append({"id": pid, "label": labels.get(pid) or name, "org": u.get("label"), "plan": u["plan"],
+                      "sampledAt": u["fetchedAt"], "stale": stale, "windows": windows,
+                      "cost": {"today": u["today"], "month": u["month"], "sampledAt": u["fetchedAt"], "stale": stale}})
+    # Two logins on the same plan: tell them apart by organization.
+    names = [c["label"] for c in cards]
+    for c in cards:
+        if c["org"] and c["id"] not in labels and names.count(c["label"]) > 1:
+            c["label"] += " · " + c["org"]
+    return cards
+
+
 def state():
     u = usage()
     claude, claude_err = safe(claude_sessions, [])
@@ -1109,12 +1189,11 @@ def state():
         if not DEMO:
             start_local_checker()  # only now do we know which repositories to check
     cal, cal_err = safe(calendar, {"events": []})
-    data = u.get("data") or {}
     return {
         "now": now_ms(),
-        "claude": {"usage": data.get("claude"), "accounts": data.get("claudeAccounts") or [],
-                   "sessions": claude, "error": claude_err},
-        "codex": {"usage": data.get("codex"), "sessions": codex, "error": codex_err},
+        "chats": {"sessions": [dict(s, tool="claude") for s in claude] + [dict(s, tool="codex") for s in codex],
+                  "error": "; ".join(e for e in (claude_err, codex_err) if e) or None},
+        "subscriptions": subscriptions(u.get("data") or {}),
         "usageError": u.get("error"),
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),

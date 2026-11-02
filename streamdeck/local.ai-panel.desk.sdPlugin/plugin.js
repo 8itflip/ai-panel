@@ -89,6 +89,7 @@ function duration(ms) {
 /* ---------- AI Panel keys ---------- */
 
 function sessions(st) {
+  if (st.chats) return st.chats.sessions;
   return [...(st.claude?.sessions || []).map((s) => ({ ...s, tool: "claude" })),
     ...(st.codex?.sessions || []).map((s) => ({ ...s, tool: "codex" }))];
 }
@@ -111,6 +112,9 @@ function drawWaiting(st) {
 }
 
 function accounts(st) {
+  if (st.subscriptions) return st.subscriptions.map((a) => ({ label: a.label, u: Object.fromEntries(
+    a.windows.map((w) => [w.label === "5h" ? "session" : w.label === "Weekly" ? "weekly" : w.label,
+      { pct: w.usedPercent, resetsAt: typeof w.resetsAt === "number" ? w.resetsAt : Date.parse(w.resetsAt) }])) }));
   const list = [];
   const c = st.claude || {};
   if (c.usage) list.push({ label: c.usage.label || "Claude", u: c.usage });
