@@ -401,11 +401,17 @@ def pid_alive(pid):
         return True
 
 
+def claude_project_dirs():
+    """Transcript folders of every Claude login: ~/.claude and further config dirs such as ~/.claude-work,
+    which a second Claude app (Parall) or a CLAUDE_CONFIG_DIR login writes to."""
+    return [CLAUDE_PROJECTS] + sorted(HOME.glob(".claude-*/projects"))
+
+
 def claude_transcript(session_id):
     path = _transcript_paths.get(session_id)
     if path and os.path.exists(path):
         return path
-    hits = list(CLAUDE_PROJECTS.glob("*/%s.jsonl" % session_id))
+    hits = [h for d in claude_project_dirs() for h in d.glob("*/%s.jsonl" % session_id)]
     path = str(hits[0]) if hits else None
     _transcript_paths[session_id] = path
     return path
@@ -448,18 +454,27 @@ _instance_spend = {"at": 0, "data": {}}
 
 
 def instance_spend():
-    """Today's and 30-day cost of each Parall instance, label -> {"today", "month"}, from its sessions' transcripts.
+    """Today's and 30-day cost of each Parall instance, label -> {"today", "month", "shared": {"today", "month"}}.
 
-    OpenUsage only attributes sessions listed by the main Claude app, so these have no cost of their own there."""
+    An instance's login writes either to its own config dir (e.g. ~/.claude-work: every transcript there is
+    that login's) or, in newer Claude apps, to the shared ~/.claude. "shared" is the part in ~/.claude, which
+    OpenUsage charges to the main account."""
     if time.time() - _instance_spend["at"] < 60:
         return _instance_spend["data"]
     days = {time.strftime("%Y-%m-%d", time.localtime(time.time() - i * 86400)) for i in range(30)}
     today = time.strftime("%Y-%m-%d")
     cutoff = time.time() - 31 * 86400
+
+    def add(total, tallies):
+        for t in tallies:
+            if t:
+                total["today"] += t.days.get(today, 0)
+                total["month"] += sum(v for d, v in t.days.items() if d in days)
+
     out = {}
     if PARALL_DIR.is_dir():
         for inst in PARALL_DIR.iterdir():
-            today_usd = month_usd = 0.0
+            total, shared, own_dirs = {"today": 0.0, "month": 0.0}, {"today": 0.0, "month": 0.0}, set()
             for f in (inst / "claude-code-sessions").glob("*/*/local_*.json"):
                 try:
                     if os.stat(f).st_mtime < cutoff:
@@ -468,31 +483,36 @@ def instance_spend():
                 except (OSError, ValueError):
                     continue
                 tpath = sid and claude_transcript(sid)
-                for t in claude_tallies(sid, tpath) if tpath else []:
-                    if t:
-                        today_usd += t.days.get(today, 0)
-                        month_usd += sum(v for d, v in t.days.items() if d in days)
-            out[parall_instance(inst.name)[0]] = {"today": round(today_usd, 2), "month": round(month_usd, 2)}
+                if not tpath:
+                    continue
+                if Path(tpath).parent.parent == CLAUDE_PROJECTS:
+                    add(shared, claude_tallies(sid, tpath))
+                else:
+                    own_dirs.add(Path(tpath).parent.parent)
+            for d in own_dirs:  # sessions, subagents and CLI runs of this login alike
+                add(total, (tally(str(f), consume_claude, (b'"usage"',)) for f in d.rglob("*.jsonl")
+                            if os.stat(f).st_mtime >= cutoff))
+            rounded = lambda x: {k: round(v, 2) for k, v in x.items()}
+            out[parall_instance(inst.name)[0]] = dict(rounded({k: total[k] + shared[k] for k in total}),
+                                                      shared=rounded(shared))
     _instance_spend.update(at=time.time(), data=out)
     return out
 
 
 def attribute_spend(main, accounts, spend):
-    """Give extra Claude accounts the cost of their Parall instance (matched by name) and take it off the main one.
+    """Give extra Claude accounts the cost of their Parall instance (matched by name) and take the part
+    OpenUsage counted on the main account (transcripts in the shared ~/.claude) off the main card.
 
-    OpenUsage counts sessions it cannot attribute on the default login, i.e. the main card. Accounts that
-    already have their own cost in OpenUsage are left as they are."""
+    The instance's own config dir is what OpenUsage reports for the account, so its total replaces that."""
     if len(accounts) == 1 and len(spend) == 1:
         pairs = [(accounts[0], next(iter(spend.values())))]
     else:
         pairs = [(a, spend[a["label"]]) for a in accounts if a["label"] in spend]
     for a, s in pairs:
-        if a["month"] is not None:
-            continue
-        a.update(s, multiple=multiple(s["month"], "claude", a["plan"]))
+        a.update(today=s["today"], month=s["month"], multiple=multiple(s["month"], "claude", a["plan"]))
         if main and main["month"] is not None:
-            main["today"] = round(max(0, (main["today"] or 0) - s["today"]), 2)
-            main["month"] = round(max(0, main["month"] - s["month"]), 2)
+            main["today"] = round(max(0, (main["today"] or 0) - s["shared"]["today"]), 2)
+            main["month"] = round(max(0, main["month"] - s["shared"]["month"]), 2)
             main["multiple"] = multiple(main["month"], "claude", main["plan"])
 
 
