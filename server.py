@@ -761,7 +761,8 @@ def parse_provider(p, kind):
         "weekly": bar("Weekly"),
         "models": models,
         "todayTokens": tokens((lines.get("Today") or {}).get("value")),
-        "today": money((lines.get("Today") or {}).get("value")),
+        # OpenUsage leaves the Today line out on a day without usage; with a 30-day figure that means $0.
+        "today": money((lines.get("Today") or {}).get("value")) if "Today" in lines or month is None else 0.0,
         "month": month,
         "multiple": multiple(month, kind, plan),
         "fetchedAt": iso_to_ms(p.get("fetchedAt")),
