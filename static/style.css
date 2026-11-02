@@ -346,6 +346,8 @@ h2 {
 .col-foot:empty { display: none; }
 
 .local { flex: none; }
+/* The side column is narrow: the summary moves to a second line instead of running past the card edge. */
+.local .pr-group .sum { flex-wrap: wrap; justify-content: flex-end; row-gap: 0.1rem; }
 #local { display: flex; flex-direction: column; gap: 0.1rem; }
 #local:empty { display: none; }
 .pr-group .sum .sep { color: var(--faint); }
