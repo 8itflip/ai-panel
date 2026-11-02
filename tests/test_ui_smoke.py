@@ -66,6 +66,8 @@ class UiSmoke(unittest.TestCase):
         self.assertIn("idle for 2+ days", dom, "idle sessions")
         self.assertIn("Migrate auth to OAuth 2.1", dom, "Claude chats")
         self.assertIn('<span class="inst">Codex</span>', dom, "Codex chats are tagged")
+        self.assertIn('<span class="inst">Claude</span>', dom, "main Claude app chats are tagged")
+        self.assertIn('<span class="inst">Work</span>', dom, "Parall instance chats keep their own tag")
         self.assertIn("Claude Team", dom)
         self.assertIn("Fable", dom, "model-specific weekly limit")
         self.assertIn("left at reset", dom, "window pace")
