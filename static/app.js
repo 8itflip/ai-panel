@@ -199,9 +199,9 @@ function sessionRow(s, tool) {
   const label = t(s.state === "waiting" && s.detail === "question" ? "state.question" : `state.${s.state}`);
   const tip = s.detail && s.detail !== "question" ? ` title="${esc(s.detail)}"` : "";
   const open = s.url ? ` data-open="session" data-tool="${tool}" data-id="${esc(s.id)}" tabindex="0" role="button"` : "";
-  // Claude rows name their app instance (Parall); Codex rows say which tool they come from.
-  const tag = s.instance || (tool === "codex" ? "Codex" : "");
-  const inst = tag ? `<span class="inst">${esc(tag)}</span>` : "";
+  // Every row says where it comes from: its Parall instance, else Codex or the main Claude app.
+  const tag = s.instance || (tool === "codex" ? "Codex" : "Claude");
+  const inst = `<span class="inst">${esc(tag)}</span>`;
   return `<li class="s ${s.state}${s.stale ? " stale" : ""}"${tip}${open}>
     <span class="ic">${ICON[s.state] || ""}</span>
     <div class="main">
