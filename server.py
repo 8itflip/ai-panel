@@ -726,7 +726,8 @@ def parse_provider(p, kind):
         if not l or l.get("type") != "progress":
             return None
         limit = l.get("limit") or 100
-        return {"pct": round(100.0 * (l.get("used") or 0) / limit), "resetsAt": iso_to_ms(l.get("resetsAt"))}
+        return {"pct": round(100.0 * (l.get("used") or 0) / limit), "resetsAt": iso_to_ms(l.get("resetsAt")),
+                "windowMs": l.get("periodDurationMs")}
 
     plan = p.get("plan") or ""
     month = money((lines.get("Last 30 Days") or {}).get("value"))
@@ -853,6 +854,24 @@ def forecast(key, kind, bar):
         return {"eta": None, "beforeReset": False}
     eta = int(now_ms() + (100 - bar["pct"]) / rate)
     return {"eta": eta, "beforeReset": bool(bar.get("resetsAt")) and eta < bar["resetsAt"]}
+
+
+def window_pace(bar):
+    """The window's average pace so far: expected and projected use at reset, and when it runs out at that pace.
+
+    Needs no history, unlike forecast(); None in the first minutes of a window, which say little about its pace."""
+    span, reset = bar.get("windowMs"), bar.get("resetsAt")
+    if not span or not reset:
+        return None
+    now = now_ms()
+    elapsed = span - (reset - now)
+    if not max(10 * 60e3, span / 50) <= elapsed <= span:
+        return None
+    out = {"expected": round(100.0 * elapsed / span), "projected": round(bar["pct"] * span / float(elapsed))}
+    if bar["pct"] >= 100:
+        return dict(out, exhausted=True)
+    eta = int(now + (100 - bar["pct"]) * elapsed / bar["pct"]) if bar["pct"] > 0 else None
+    return dict(out, eta=eta, beforeReset=eta is not None and eta < reset)
 
 
 # ---------- data refreshed in the background (GitHub, GitLab, status, git) ----------
@@ -1120,12 +1139,13 @@ def subscriptions(data):
     for pid, u in found:
         if not u:
             continue
-        windows = [dict(label=kind, usedPercent=u[kind]["pct"], resetsAt=u[kind]["resetsAt"],
-                        forecast=u[kind].get("forecast")) for kind in ("session", "weekly") if u[kind]]
-        windows += [dict(label=m["label"], usedPercent=m["pct"], resetsAt=m["resetsAt"],
-                         forecast=m.get("forecast")) for m in u["models"]]
+        bars = [dict(u[kind], label=kind) for kind in ("session", "weekly") if u[kind]] + u["models"]
+        windows = [dict(label=b["label"], usedPercent=b["pct"], resetsAt=b["resetsAt"], forecast=b.get("forecast"),
+                        pace=window_pace(b)) for b in bars]
         stale = bool(u["fetchedAt"]) and now_ms() - u["fetchedAt"] > 20 * 60e3
-        name = " ".join(x for x in ("Codex" if pid == "codex" else "Claude", u["plan"]) if x)
+        # "Max 5x" is just "Max" now; the multiplier is no longer part of the plan's name.
+        plan = re.sub(r"\s+\d+x$", "", u["plan"] or "", flags=re.I)
+        name = " ".join(x for x in ("Codex" if pid == "codex" else "Claude", plan) if x)
         cards.append({"id": pid, "label": labels.get(pid) or name, "org": u.get("label"), "plan": u["plan"],
                       "sampledAt": u["fetchedAt"], "stale": stale, "windows": windows,
                       "cost": {"today": u["today"], "month": u["month"], "sampledAt": u["fetchedAt"], "stale": stale}})

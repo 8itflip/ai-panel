@@ -68,6 +68,8 @@ class UiSmoke(unittest.TestCase):
         self.assertIn('<span class="inst">Codex</span>', dom, "Codex chats are tagged")
         self.assertIn("Claude Team", dom)
         self.assertIn("Fable", dom, "model-specific weekly limit")
+        self.assertIn("left at reset", dom, "window pace")
+        self.assertIn('class="tick"', dom, "even-pace mark")
         self.assertEqual(count(r'class="cost-pair"'), 4, "one overall total and three account summaries")
         self.assertIn('id="subscription-total"', dom)
         self.assertNotIn("Jeff", dom)

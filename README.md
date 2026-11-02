@@ -19,7 +19,9 @@ open pull requests with CI status, and service status.
   highlighted and counted on the left. Click a session to open it in its app.
 - **Subscriptions**: one card per account in OpenUsage (Claude, further Claude logins, Codex) with every
   limit in one row: 5 hours, week and model-specific weekly limits such as Fable. Each bar shows what is
-  left, the reset time, and whether the current pace runs out before the reset or lasts to it.
+  left and the reset time. A tick on the bar marks where it would be at an even pace, and the line below
+  gives the pace: how much the window's average pace leaves at the reset, or when it runs out before it
+  (the recent pace from the usage history counts too).
   A second Claude login (added to OpenUsage with [Claude Swap](https://github.com/realiti4/claude-swap))
   gets its own card, named after its plan, and after its organization when two logins share a plan.
   When that login runs in a second Claude app made with [Parall](https://parall.app), its cost is counted
@@ -84,7 +86,7 @@ GitLab merge requests need [glab](https://gitlab.com/gitlab-org/cli) signed in w
 `glab auth login --hostname <host>`. PRs from other GitHub owners land in "Other".
 Restart the server after changing the file.
 
-Subscription cards are named after the tool and plan ("Claude Max 5x", "Codex Plus"). To rename one, add
+Subscription cards are named after the tool and plan ("Claude Max", "Codex Plus"). To rename one, add
 `subscriptionLabels` to `config.json`, keyed by OpenUsage provider id (`claude`, `claude@<hash>`, `codex`):
 
 ```json
