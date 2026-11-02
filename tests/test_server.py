@@ -304,6 +304,12 @@ class OpenUsageAccounts(Temp):
         self.assertEqual(accounts[1]["weekly"]["pct"], 25)
         self.assertIsNone(accounts[1]["session"])
 
+    def test_missing_today_line_means_no_usage_today(self):
+        line = lambda label, value: {"label": label, "type": "text", "value": value}
+        idle = server.parse_provider({"plan": "Plus", "lines": [line("Last 30 Days", "$225.76 · 715M tokens")]}, "codex")
+        self.assertEqual((idle["today"], idle["month"]), (0.0, 225.76))
+        self.assertIsNone(server.parse_provider({"plan": "Plus", "lines": []}, "codex")["today"])
+
     def test_subscription_cards_list_every_limit_window(self):
         cards = server.subscriptions(server.usage()["data"])
         self.assertEqual([(c["id"], c["label"]) for c in cards],
