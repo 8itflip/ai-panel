@@ -315,9 +315,33 @@ class OpenUsageAccounts(Temp):
         self.addCleanup(setattr, server, "CONFIG", server.CONFIG)
         server.CONFIG = {"subscriptionLabels": {"claude": "Personal"}}
         data = server.usage()["data"]
-        data["claudeAccounts"][1]["plan"] = "Max"  # two Max logins
+        data["claudeAccounts"][1]["plan"] = "Max 5x"  # two Max logins; the multiplier is not part of the name
         self.assertEqual([c["label"] for c in server.subscriptions(data)],
                          ["Personal", "Claude Max · Acme (Labs)", "Claude Max · Zeta Corp"])
+
+
+class WindowPace(unittest.TestCase):
+    WEEK = 7 * 24 * 3600 * 1000
+
+    def setUp(self):
+        self.addCleanup(setattr, server, "now_ms", server.now_ms)
+        server.now_ms = lambda: 10 ** 12
+
+    def bar(self, pct, elapsed_share):
+        return {"pct": pct, "windowMs": self.WEEK, "resetsAt": 10 ** 12 + int(self.WEEK * (1 - elapsed_share))}
+
+    def test_faster_than_even_runs_out_before_reset(self):
+        p = server.window_pace(self.bar(60, 0.5))
+        self.assertEqual((p["expected"], p["projected"], p["beforeReset"]), (50, 120, True))
+        self.assertEqual(p["eta"], 10 ** 12 + int(40 * self.WEEK / 2 / 60))
+
+    def test_slower_than_even_lasts_to_reset(self):
+        p = server.window_pace(self.bar(20, 0.5))
+        self.assertEqual((p["projected"], p["beforeReset"]), (40, False))
+
+    def test_first_minutes_of_a_window_have_no_pace(self):
+        self.assertIsNone(server.window_pace(self.bar(5, 0.01)))
+        self.assertIsNone(server.window_pace({"pct": 5, "resetsAt": 10 ** 12}))  # window length unknown
 
 
 class InstanceSpend(Temp):

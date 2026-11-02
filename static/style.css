@@ -168,6 +168,8 @@ h2 {
 .meter .pct { font-size: 1.05rem; font-weight: 700; color: var(--ink); }
 .meter.hot .pct { color: var(--warn); }
 .segs { display: grid; grid-template-columns: repeat(20, 1fr); gap: 0.15rem; margin: 0.25rem 0 0.2rem; }
+.segs { position: relative; }
+.segs .tick { position: absolute; top: -0.15rem; bottom: -0.15rem; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--muted); }
 .segs i { height: 0.4rem; border-radius: 0.1rem; background: var(--track); }
 .segs i.f { background: var(--ink); }
 .meter.hot .segs i.f { background: var(--warn); }

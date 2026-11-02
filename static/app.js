@@ -91,10 +91,19 @@ function tickClock() {
 /* ---------- column headers: limits, forecast, status ---------- */
 
 function forecastNote(bar) {
-  // A warning when the current pace runs out before the reset; subscription cards (bar.pace) also confirm a safe pace.
-  const f = bar.forecast;
-  if (f?.beforeReset) return `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>`;
-  return bar.pace && f && !f.exhausted ? `<div class="fc ok">${esc(t("pace.ok"))}</div>` : "";
+  // A warning when the recent pace (forecast) or the window's average pace (pace) runs out before the reset;
+  // otherwise how much the average pace leaves at the reset.
+  const etas = [bar.forecast, bar.pace].filter((f) => f?.beforeReset).map((f) => f.eta);
+  if (etas.length) return `<div class="fc">${esc(t("forecast", { time: dayTime(Math.min(...etas)) }))}</div>`;
+  const p = bar.pace;
+  if (!p || p.exhausted || bar.forecast?.exhausted) return "";
+  return `<div class="fc ok">${esc(t("pace.left", { n: Math.max(0, 100 - p.projected) }))}</div>`;
+}
+
+function paceTick(pace) {
+  // Where the bar would end at an even pace: filled segments short of the tick mean the limit is used up faster.
+  if (!pace || pace.exhausted) return "";
+  return `<span class="tick" style="left:${100 - pace.expected}%" title="${esc(t("pace.even", { n: 100 - pace.expected }))}"></span>`;
 }
 
 function meter(label, bar) {
@@ -102,13 +111,13 @@ function meter(label, bar) {
   // Shows what is LEFT: the number and the filled bar shrink as usage grows.
   const left = Math.max(0, 100 - bar.pct);
   const out = bar.forecast?.exhausted || left === 0;
-  const warn = bar.forecast?.beforeReset;
+  const warn = bar.forecast?.beforeReset || bar.pace?.beforeReset;
   const filled = Math.round(left / 5);
   const segs = Array.from({ length: 20 }, (_, i) => `<i${i < filled ? ' class="f"' : ""}></i>`).join("");
   const reset = bar.resetsAt ? `<span data-until="${bar.resetsAt}"></span>` : "";
   return `<div class="meter${left <= 20 || warn ? " hot" : ""}${out ? " out" : ""}">
     <div class="row1"><span>${label}</span><span class="pct">${t("pct.left", { n: left })}</span></div>
-    <div class="segs">${segs}</div>
+    <div class="segs">${segs}${paceTick(bar.pace)}</div>
     <div class="reset">${reset}</div>${forecastNote(bar)}
   </div>`;
 }
@@ -510,7 +519,7 @@ function renderSubscriptions(accounts) {
       const label = w.label === "session" || w.label === "5h" ? t("limit.short.session") : w.label === "weekly" || w.label === "Weekly" ? t("limit.short.weekly") : esc(w.label.replace(/^Weekly · /, ""));
       if (w.usedPercent == null) return `<div class="meter unknown" title="${esc(t("desk.noUsage"))}"><div class="row1"><span>${label}</span><span class="pct">—</span></div><div class="segs">${"<i></i>".repeat(20)}</div><div class="reset"></div></div>`;
       const reset = typeof w.resetsAt === "number" ? w.resetsAt : Date.parse(w.resetsAt);
-      return meter(label, { pct: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: Number.isFinite(reset) ? reset : null, forecast: w.forecast, pace: true });
+      return meter(label, { pct: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: Number.isFinite(reset) ? reset : null, forecast: w.forecast, pace: w.pace });
     }).join("");
     return `<article class="subscription${a.stale ? " stale-account" : ""}">
       <div class="subscription-head">${serviceDot}<b>${esc(a.label)}</b>${costPair(a.cost)}</div>

@@ -8,7 +8,9 @@ Interfejs jest w języku systemu (polski lub angielski).
 Układ: z lewej zegar, kalendarz i lokalne zmiany; w środku jedna kolumna **Czaty** (sesje Claude i Codex razem,
 od najnowszej, wiersze Codexa z etykietą „Codex”); z prawej **Subskrypcje** nad **Pull requestami**.
 Każde konto z OpenUsage ma kartę ze wszystkimi limitami w jednym wierszu (5 h, tydzień i tygodniowe limity
-modeli, np. Fable) oraz kosztem wg cen API dziś i za 30 dni. Nazwę karty można zmienić w `config.json`:
+modeli, np. Fable) oraz kosztem wg cen API dziś i za 30 dni. Kreska na pasku pokazuje, gdzie byłby przy
+równym tempie, a linia pod nim tempo: ile zostanie na reset przy średnim tempie z bieżącego okna albo kiedy
+limit skończy się przed resetem. Nazwę karty można zmienić w `config.json`:
 `"subscriptionLabels": {"claude": "Claude Max"}` (klucz to id providera OpenUsage: `claude`, `claude@<hash>`, `codex`).
 
 ![AI Panel na danych demo](docs/screenshot-pl.png)
