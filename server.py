@@ -730,10 +730,15 @@ def parse_provider(p, kind):
 
     plan = p.get("plan") or ""
     month = money((lines.get("Last 30 Days") or {}).get("value"))
+    # Model-specific weekly limits (e.g. "Fable") are further percent bars beside Session and Weekly.
+    models = [dict(bar(l["label"]), label=l["label"]) for l in p.get("lines") or []
+              if l.get("type") == "progress" and (l.get("format") or {}).get("kind") == "percent"
+              and l.get("label") not in ("Session", "Weekly")]
     return {
         "plan": plan,
         "session": bar("Session"),
         "weekly": bar("Weekly"),
+        "models": models,
         "todayTokens": tokens((lines.get("Today") or {}).get("value")),
         "today": money((lines.get("Today") or {}).get("value")),
         "month": month,
@@ -757,6 +762,7 @@ def account_label(p):
 
 def provider_usage(p, pid, kind):
     u = parse_provider(p, kind)
+    u["providerId"] = pid
     if not u["session"] and not u["weekly"]:
         format_issue("openusage:" + pid, "OpenUsage returned no Session/Weekly limits")
     else:
@@ -766,6 +772,10 @@ def provider_usage(p, pid, kind):
         if bar:
             record_usage("%s:%s" % (pid, window), bar)
             bar["forecast"] = forecast("%s:%s" % (pid, window), window, bar)
+    for bar in u["models"]:
+        key = "%s:weekly:%s" % (pid, bar["label"])
+        record_usage(key, bar)
+        bar["forecast"] = forecast(key, "weekly", bar)
     return u
 
 
@@ -1098,6 +1108,35 @@ def static_version():
     return max(int(f.stat().st_mtime) for f in STATIC.iterdir() if f.suffix in STATIC_TYPES)
 
 
+def subscriptions(data):
+    """One card per OpenUsage account: its limit windows and API-equivalent cost.
+
+    Optional `subscriptionLabels` in config.json names accounts by OpenUsage provider id ("claude", "claude@<hash>",
+    "codex"); otherwise the card is named after the tool and plan."""
+    labels = CONFIG.get("subscriptionLabels") or {}
+    found = [("claude", data.get("claude"))] + [(a.get("providerId"), a) for a in data.get("claudeAccounts") or []]
+    found.append(("codex", data.get("codex")))
+    cards = []
+    for pid, u in found:
+        if not u:
+            continue
+        windows = [dict(label=kind, usedPercent=u[kind]["pct"], resetsAt=u[kind]["resetsAt"],
+                        forecast=u[kind].get("forecast")) for kind in ("session", "weekly") if u[kind]]
+        windows += [dict(label=m["label"], usedPercent=m["pct"], resetsAt=m["resetsAt"],
+                         forecast=m.get("forecast")) for m in u["models"]]
+        stale = bool(u["fetchedAt"]) and now_ms() - u["fetchedAt"] > 20 * 60e3
+        name = " ".join(x for x in ("Codex" if pid == "codex" else "Claude", u["plan"]) if x)
+        cards.append({"id": pid, "label": labels.get(pid) or name, "org": u.get("label"), "plan": u["plan"],
+                      "sampledAt": u["fetchedAt"], "stale": stale, "windows": windows,
+                      "cost": {"today": u["today"], "month": u["month"], "sampledAt": u["fetchedAt"], "stale": stale}})
+    # Two logins on the same plan: tell them apart by organization.
+    names = [c["label"] for c in cards]
+    for c in cards:
+        if c["org"] and c["id"] not in labels and names.count(c["label"]) > 1:
+            c["label"] += " · " + c["org"]
+    return cards
+
+
 def state():
     u = usage()
     claude, claude_err = safe(claude_sessions, [])
@@ -1109,12 +1148,11 @@ def state():
         if not DEMO:
             start_local_checker()  # only now do we know which repositories to check
     cal, cal_err = safe(calendar, {"events": []})
-    data = u.get("data") or {}
     return {
         "now": now_ms(),
-        "claude": {"usage": data.get("claude"), "accounts": data.get("claudeAccounts") or [],
-                   "sessions": claude, "error": claude_err},
-        "codex": {"usage": data.get("codex"), "sessions": codex, "error": codex_err},
+        "chats": {"sessions": [dict(s, tool="claude") for s in claude] + [dict(s, tool="codex") for s in codex],
+                  "error": "; ".join(e for e in (claude_err, codex_err) if e) or None},
+        "subscriptions": subscriptions(u.get("data") or {}),
         "usageError": u.get("error"),
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),

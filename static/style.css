@@ -176,23 +176,24 @@ h2 {
 
 .sessions { flex: 0 1 auto; min-height: 0; overflow: hidden; padding: 0.4rem 0.6rem; }
 .s {
-  display: grid; grid-template-columns: 1.8rem 1fr auto; column-gap: 0.6rem; align-items: center;
-  padding: 0.5rem 0.7rem; border-radius: 0.7rem; position: relative;
+  display: grid; grid-template-columns: 1.3rem 1fr auto; column-gap: 0.55rem; align-items: center;
+  padding: 0.3rem 0.6rem; border-radius: 0.55rem; position: relative;
 }
-.s + .s { margin-top: 0.1rem; }
-.s .ic { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; }
+.s + .s { margin-top: 0.05rem; }
+.s .ic { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; }
 .s .main { min-width: 0; }
-.s .name { font-size: 1.05rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.s .name { font-size: 0.95rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .s .name { display: flex; align-items: baseline; }
 .s .name .n { overflow: hidden; text-overflow: ellipsis; }
 .s .proj {
   font-weight: 500; color: var(--faint); font-size: 0.85rem; margin-left: 0.5rem;
   flex: 0 1 auto; min-width: 3rem; max-width: 12rem; overflow: hidden; text-overflow: ellipsis;
 }
-.s .msg { font-size: 0.85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.1rem; }
-.s .right { text-align: right; white-space: nowrap; }
-.s .lbl { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
-.s .when { font-size: 0.8rem; color: var(--faint); margin-top: 0.1rem; }
+.s .msg { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 0.05rem; }
+/* State, cost and age share one line, so a chat without a message stays one line high. */
+.s .right { display: flex; align-items: baseline; gap: 0.5rem; white-space: nowrap; }
+.s .lbl { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.s .when { font-size: 0.78rem; color: var(--faint); }
 .s .usd { color: var(--muted); font-weight: 600; }
 .s .usd:not(:empty)::after { content: " · "; color: var(--faint); font-weight: 400; }
 
@@ -294,6 +295,7 @@ h2 {
 .svc span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
 
 .meter .fc { font-size: 0.72rem; color: var(--warn); font-weight: 650; margin-top: 0.1rem; }
+.meter .fc.ok { color: var(--muted); font-weight: 500; }
 .meter.out .pct { color: var(--wait); }
 .meter.out .segs i.f { background: var(--wait); }
 .limit-out {
@@ -367,3 +369,64 @@ h2 {
   border-radius: 1rem; padding: 0.05rem 0.55rem; white-space: nowrap;
 }
 .health:empty { display: none; }
+
+/* Desk layout: chats in the middle column, subscriptions and pull requests on the right. */
+.grid { grid-template-columns: 23rem minmax(0, 1.3fr) minmax(0, 1fr); }
+.desk-brand { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
+.desk-brand b { font-size: 1.25rem; letter-spacing: -.04em; }
+.desk-main, .desk-right { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+.desk-main .chats { flex: 1 1 0; }
+.subscriptions { padding: 1rem 1.3rem; flex: 0 0 auto; max-height: 62%; overflow-y: auto; }
+#subscriptions { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: .35rem; }
+.section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; }
+.section-heading h2 { margin-bottom: .6rem; }
+.section-note { font-size: .65rem; color: var(--faint); letter-spacing: .05em; }
+.subscription { padding-top: .45rem; border-top: 1px solid var(--line); min-width: 0; display: flex; flex-direction: column; }
+.subscription-head { display: flex; gap: .6rem; align-items: baseline; margin-bottom: .3rem; }
+.subscription-head b { font-size: 1rem; }
+.subscription-head span { color: var(--muted); font-size: .73rem; }
+.subscription-head .warn, .warn { color: var(--warn); }
+.stale-account .segs { opacity: .4; }
+.subscription .bars { margin: 0 0 .35rem; }
+.subscription .meter { min-width: 0; }
+.subscription .desk-note { font-size: .68rem; margin-top: auto; }
+/* All limits of an account share one row, so a model-specific weekly limit does not add a row to every card. */
+.subscription .bars { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: .55rem; margin-top: 0; }
+.subscription .meter .row1 { gap: .2rem; }
+.subscription .meter .row1 span:first-child { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.subscription .meter .pct { flex: none; white-space: nowrap; font-size: .95rem; }
+/* Every card keeps the same rows, even when a limit has no reset time yet. */
+.subscription .meter .reset { line-height: 1.3; min-height: 1.3em; }
+.desk-note { font-size: .8rem; color: var(--muted); line-height: 1.45; }
+.col-head .desk-note { margin-top: .5rem; }
+.attention { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 1.15rem 1.3rem; gap: 1rem; }
+.attention .prs { flex: 1 1 0; min-height: 0; max-height: none; }
+button:focus-visible, [role="button"]:focus-visible { outline: 2px solid var(--work); outline-offset: 2px; }
+.chats .col-foot { line-height: 1.5; }
+@media (max-width: 900px) {
+  html { font-size: 14px; }
+  body { overflow: auto; height: auto; }
+  .grid { grid-template-columns: 1fr; height: auto; }
+  .side { min-height: 25rem; }
+  .chats { min-height: 32rem; }
+  .chats .sessions { max-height: 36rem; overflow-y: auto; }
+  .subscriptions { max-height: none; }
+  .attention { min-height: 30rem; }
+}
+
+/* API-equivalent cost summaries share the account and section heading rows. */
+.subscriptions-heading { flex-wrap: wrap; align-items: center; margin-bottom: .65rem; row-gap: .5rem; }
+.subscriptions-heading h2 { margin: 0; }
+#subscription-total { margin-left: auto; }
+.cost-pair { display: inline-flex; align-items: baseline; gap: .65rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cost-caption { font-size: .6rem; color: var(--muted); letter-spacing: .015em; }
+.cost-period { display: inline-flex; align-items: baseline; gap: .25rem; }
+.cost-period small { font-size: .65rem; color: var(--muted); font-weight: 400; }
+.cost-period strong { font-size: .82rem; color: var(--ink); font-weight: 650; }
+.subscription-head { flex-wrap: wrap; align-items: center; gap: .45rem; }
+/* The section heading names the API-equivalent cost once; each account shows its amounts beside its name. */
+.subscription-head > .cost-pair { margin-left: auto; }
+.subscription-head .cost-caption { display: none; }
+.subscription-head .cost-period { font-size: inherit; }
+.meter.unknown .pct { color: var(--faint); }
+.meter.unknown .segs { opacity: .55; }

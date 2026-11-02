@@ -39,7 +39,7 @@ test("English plurals and placeholders", () => {
   const { t } = load(["en-US"]);
   assert.equal(t("sessions", { n: 1 }), "1 session");
   assert.equal(t("sessions", { n: 2 }), "2 sessions");
-  assert.equal(t("headline.waiting", { n: 3 }), "3 sessions waiting for you");
+  assert.equal(t("headline.waiting", { n: 3 }), "3 sessions need your attention");
   assert.equal(t("in", { t: "5 min" }), "in 5 min");
 });
 

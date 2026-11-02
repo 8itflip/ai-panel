@@ -5,6 +5,12 @@
 Dashboard na dodatkowy monitor (np. 1920×1080 albo podłużny 1920×720): sesje Claude Code i Codex, limity, koszty i najbliższe spotkania.
 Interfejs jest w języku systemu (polski lub angielski).
 
+Układ: z lewej zegar, kalendarz i lokalne zmiany; w środku jedna kolumna **Czaty** (sesje Claude i Codex razem,
+od najnowszej, wiersze Codexa z etykietą „Codex”); z prawej **Subskrypcje** nad **Pull requestami**.
+Każde konto z OpenUsage ma kartę ze wszystkimi limitami w jednym wierszu (5 h, tydzień i tygodniowe limity
+modeli, np. Fable) oraz kosztem wg cen API dziś i za 30 dni. Nazwę karty można zmienić w `config.json`:
+`"subscriptionLabels": {"claude": "Claude Max"}` (klucz to id providera OpenUsage: `claude`, `claude@<hash>`, `codex`).
+
 ![AI Panel na danych demo](docs/screenshot-pl.png)
 Działa w całości lokalnie, bez zależności (Python 3 ze standardową biblioteką + mały helper w Swift).
 
@@ -35,7 +41,7 @@ Statusy:
 - **Gotowe** / **Przerwane**: tura zakończona / przerwana.
 
 Claude Code i Codex zapisują sesje w nieudokumentowanych formatach. Gdy po aktualizacji dane przestaną
-pasować (brak pól, kolumn w bazie albo znanych zdarzeń), kolumna pokazuje „zmienił się format danych”
+pasować (brak pól, kolumn w bazie albo znanych zdarzeń), nagłówek czatów pokazuje „zmienił się format danych”
 ze szczegółem, zamiast po cichu zostać pusta.
 
 „Aktywne” sesje to te z ruchem w ciągu ostatnich 24 h (`CLAUDE_ACTIVE_HOURS` i `CODEX_ACTIVE_HOURS`

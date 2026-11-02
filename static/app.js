@@ -91,9 +91,10 @@ function tickClock() {
 /* ---------- column headers: limits, forecast, status ---------- */
 
 function forecastNote(bar) {
-  // Only when the current pace runs out before the reset; otherwise it is noise.
+  // A warning when the current pace runs out before the reset; subscription cards (bar.pace) also confirm a safe pace.
   const f = bar.forecast;
-  return f?.beforeReset ? `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>` : "";
+  if (f?.beforeReset) return `<div class="fc">${esc(t("forecast", { time: dayTime(f.eta) }))}</div>`;
+  return bar.pace && f && !f.exhausted ? `<div class="fc ok">${esc(t("pace.ok"))}</div>` : "";
 }
 
 function meter(label, bar) {
@@ -188,13 +189,15 @@ function renderUsage(col, usage, error, accounts = []) {
 function sessionRow(s, tool) {
   const label = t(s.state === "waiting" && s.detail === "question" ? "state.question" : `state.${s.state}`);
   const tip = s.detail && s.detail !== "question" ? ` title="${esc(s.detail)}"` : "";
-  const open = s.url ? ` data-open="session" data-tool="${tool}" data-id="${esc(s.id)}"` : "";
-  const inst = s.instance ? `<span class="inst">${esc(s.instance)}</span>` : "";
+  const open = s.url ? ` data-open="session" data-tool="${tool}" data-id="${esc(s.id)}" tabindex="0" role="button"` : "";
+  // Claude rows name their app instance (Parall); Codex rows say which tool they come from.
+  const tag = s.instance || (tool === "codex" ? "Codex" : "");
+  const inst = tag ? `<span class="inst">${esc(tag)}</span>` : "";
   return `<li class="s ${s.state}${s.stale ? " stale" : ""}"${tip}${open}>
     <span class="ic">${ICON[s.state] || ""}</span>
     <div class="main">
       <div class="name"><span class="n">${esc(s.name)}</span>${inst}<span class="proj">${esc(s.project)}</span></div>
-      <div class="msg">${esc(s.message) || "&nbsp;"}</div>
+      ${s.message ? `<div class="msg">${esc(s.message)}</div>` : ""}
     </div>
     <div class="right">
       <div class="lbl">${label}</div>
@@ -480,14 +483,67 @@ function renderLocal(local) {
 
 /* ---------- main loop ---------- */
 
+function costPair(cost, totals = false) {
+  const item = (period, label) => {
+    const entry = totals ? cost[period] : { value: cost?.[period], partial: !!cost?.[period + "Partial"] };
+    const value = entry.value;
+    const known = typeof value === "number" && Number.isFinite(value) && value >= 0;
+    const text = known ? "$" + value.toLocaleString(LOCALE, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—";
+    const title = (!known ? t("desk.costUnavailable") : entry.partial ? t("desk.costPartial") : t("desk.estimated")) +
+      (!totals && cost?.sampledAt ? " · " + t("desk.costUpdated", { ago: ago(cost.sampledAt) }) : "") +
+      (!totals && cost?.stale ? " · " + t("desk.stale") : "");
+    return `<span class="cost-period" title="${esc(title)}"><small>${esc(label)}</small><strong>${esc(text)}</strong></span>`;
+  };
+  return `<div class="cost-pair"><span class="cost-caption">${t("desk.apiEquivalent")}</span>${item("today", t("today"))}${item("month", t("desk.days30"))}</div>`;
+}
+
+function renderSubscriptions(accounts) {
+  const box = $("#subscriptions");
+  $("#subscription-total").innerHTML = costPair({ today: API_COSTS.total(accounts, "today"), month: API_COSTS.total(accounts, "month") }, true);
+  box.innerHTML = accounts.map((a) => {
+    const service = last.status?.[a.id.toLowerCase().includes("codex") ? "codex" : "claude"];
+    const serviceClass = SVC[service?.indicator] || "unknown";
+    const serviceDot = `<span class="svc ${serviceClass}" title="${esc(service?.description || t("svc.unknown"))}"><i></i></span>`;
+    const windows = a.windows.length ? a.windows : [{ label: "5h", usedPercent: null }, { label: "Weekly", usedPercent: null }];
+    const bars = windows.map((w) => {
+      // Short labels keep every limit of an account in one row; a model-specific weekly limit shows its model name.
+      const label = w.label === "session" || w.label === "5h" ? t("limit.short.session") : w.label === "weekly" || w.label === "Weekly" ? t("limit.short.weekly") : esc(w.label.replace(/^Weekly · /, ""));
+      if (w.usedPercent == null) return `<div class="meter unknown" title="${esc(t("desk.noUsage"))}"><div class="row1"><span>${label}</span><span class="pct">—</span></div><div class="segs">${"<i></i>".repeat(20)}</div><div class="reset"></div></div>`;
+      const reset = typeof w.resetsAt === "number" ? w.resetsAt : Date.parse(w.resetsAt);
+      return meter(label, { pct: Math.max(0, Math.min(100, w.usedPercent)), resetsAt: Number.isFinite(reset) ? reset : null, forecast: w.forecast, pace: true });
+    }).join("");
+    return `<article class="subscription${a.stale ? " stale-account" : ""}">
+      <div class="subscription-head">${serviceDot}<b>${esc(a.label)}</b>${costPair(a.cost)}</div>
+      <div class="bars">${bars}</div>
+      <div class="desk-note">${a.sampledAt ? `${t("desk.sampled")} <span data-ago="${a.sampledAt}"></span>` : t("desk.noQuota")}${a.stale ? ` · <span class="warn">${t("desk.stale")}</span>` : ""}</div>
+      </article>`;
+  }).join("") || `<div class="empty">${t(last.usageError ? `usage.${last.usageError}` : "desk.noAccounts")}</div>`;
+  fillTimes(box);
+}
+
 function render() {
   if (!last) return;
-  const st = last.status || {};
-  renderTool("claude", last.claude, last.usageError, st.claude, last.health);
-  renderTool("codex", last.codex, last.usageError, st.codex, last.health);
-  renderSummary([...last.claude.sessions, ...last.codex.sessions], [last.claude.usage, ...last.claude.accounts, last.codex.usage]);
+  const chats = last.chats;
+  // Newest chats first; the state icon still marks what needs attention.
+  const sessions = [...chats.sessions].sort((a, b) => b.time - a.time);
+  const ul = $(".chats .sessions");
+  $("#chat-count").textContent = sessions.length;
+  $("#chat-error").textContent = chats.error || "";
+  $("#chat-error").classList.toggle("col-err", !!chats.error);
+  // The data format of Claude Code, Codex or OpenUsage changed: warn instead of quietly showing nothing.
+  const issues = Object.values(last.health || {});
+  $(".chats .health").textContent = issues.length ? `⚠ ${t("health.chip")}` : "";
+  $(".chats .health").title = issues.length ? `${issues.join(". ")}. ${t("health.hint")}` : "";
+  const stale = sessions.filter((s) => s.stale);
+  $(".chats .col-foot").textContent = stale.length
+    ? t("stale", { n: stale.length, mem: bytes(stale.reduce((m, s) => m + (s.memory || 0), 0)) }) : "";
+  ul.innerHTML = sessions.map((s) => sessionRow(s, s.tool)).join("") || `<li class="col-empty">${t(chats.error ? "desk.chatsUnavailable" : "empty.sessions")}</li>`;
+  fillTimes(ul);
+  fitList(ul, ".s", "more.sessions");
+  renderSummary(sessions, []);
+  renderSubscriptions(last.subscriptions || []);
   renderLocal(last.local);
-  renderPRs(last.prs); // PRs and changes first: the calendar fits into whatever space is left
+  renderPRs(last.prs);
   renderCalendar(last.calendar || {});
   tickClock();
 }
@@ -525,8 +581,15 @@ document.addEventListener("click", async (ev) => {
   el.classList.add("opening");
   setTimeout(() => el.classList.remove("opening"), 900);
   try {
-    await fetch("/api/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  } catch (e) { /* server unreachable, do nothing */ }
+    const result = await fetch("/api/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!result.ok) throw new Error("open failed");
+  } catch (e) { $("#conn").textContent = t("open.failed"); $("#conn").classList.add("bad"); }
+});
+
+document.addEventListener("keydown", (ev) => {
+  if ((ev.key === "Enter" || ev.key === " ") && ev.target.matches('[role="button"][data-open]')) {
+    ev.preventDefault(); ev.target.click();
+  }
 });
 
 /* ---------- hover inside the kiosk window ---------- */
