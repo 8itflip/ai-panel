@@ -347,9 +347,9 @@ class WindowPace(unittest.TestCase):
 class InstanceSpend(Temp):
     def setUp(self):
         super().setUp()
-        for name in ("CLAUDE_PROJECTS", "PARALL_DIR"):
+        for name in ("CLAUDE_PROJECTS", "PARALL_DIR", "HOME"):
             self.addCleanup(setattr, server, name, getattr(server, name))
-        server.CLAUDE_PROJECTS, server.PARALL_DIR = self.dir / "projects", self.dir / "Parall"
+        server.CLAUDE_PROJECTS, server.PARALL_DIR, server.HOME = self.dir / "projects", self.dir / "Parall", self.dir
         server._pricing.tables, server._pricing.loaded_at = [{"known-model": PRICE}], time.time()
         server._instance_spend["at"] = 0
         sessions = self.dir / "Parall" / "Claude (Work)" / "claude-code-sessions" / "acct" / "org"
@@ -357,17 +357,34 @@ class InstanceSpend(Temp):
         (sessions / "local_1.json").write_text(json.dumps({"cliSessionId": "work-1"}))
         now, old = time.time(), time.time() - 40 * 86400
         iso = lambda ts: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
-        msg = lambda i, ts: {"type": "assistant", "timestamp": iso(ts),
-                             "message": {"id": "m%d" % i, "model": "known-model", "usage": {"output_tokens": 1e6}}}
-        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-work" / "work-1.jsonl", [msg(1, now), msg(2, old)])
+        self.msg = lambda i, ts: {"type": "assistant", "timestamp": iso(ts),
+                                  "message": {"id": "m%d" % i, "model": "known-model", "usage": {"output_tokens": 1e6}}}
+        self.now, self.sessions = now, sessions
+        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-work" / "work-1.jsonl", [self.msg(1, now), self.msg(2, old)])
 
     def test_cost_moves_from_main_card_to_its_account(self):
-        self.assertEqual(server.instance_spend(), {"Work": {"today": 15.0, "month": 15.0}})  # the 40-day-old reply is left out
+        # The 40-day-old reply is left out; all of it sits in the shared ~/.claude.
+        self.assertEqual(server.instance_spend(),
+                         {"Work": {"today": 15.0, "month": 15.0, "shared": {"today": 15.0, "month": 15.0}}})
         main = {"plan": "Pro", "today": 40.0, "month": 100.0, "multiple": 5.0}
         work = {"label": "Work", "plan": "Team", "today": None, "month": None, "multiple": None}
         server.attribute_spend(main, [work], server.instance_spend())
         self.assertEqual((work["today"], work["month"], work["multiple"]), (15.0, 15.0, 0.5))
         self.assertEqual((main["today"], main["month"], main["multiple"]), (25.0, 85.0, 4.2))
+
+    def test_own_config_dir_counts_whole_and_stays_off_the_main_card(self):
+        # An older session in the login's own config dir, plus a CLI run there that the app does not list.
+        (self.sessions / "local_2.json").write_text(json.dumps({"cliSessionId": "work-2"}))
+        own = self.dir / ".claude-work" / "projects" / "-tmp-work"
+        write_jsonl(own / "work-2.jsonl", [self.msg(3, self.now)])
+        write_jsonl(own / "cli-run.jsonl", [self.msg(4, self.now)])
+        spend = server.instance_spend()["Work"]
+        self.assertEqual((spend["today"], spend["month"], spend["shared"]["month"]), (45.0, 45.0, 15.0))
+        main = {"plan": "Pro", "today": 40.0, "month": 100.0, "multiple": 5.0}
+        work = {"label": "Work", "plan": "Team", "today": None, "month": 20.0, "multiple": None}  # OpenUsage: own dir only
+        server.attribute_spend(main, [work], server.instance_spend())
+        self.assertEqual((work["today"], work["month"]), (45.0, 45.0))
+        self.assertEqual((main["today"], main["month"]), (25.0, 85.0))
 
 
 class PullRequestGroups(unittest.TestCase):
