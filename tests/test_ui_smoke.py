@@ -61,15 +61,26 @@ class UiSmoke(unittest.TestCase):
         self.assertIn("Join", dom, "meeting bar")
         self.assertIn("runs out", dom, "limit forecast")
         self.assertIn("Local changes", dom, "local changes")
+        self.assertNotIn("Your issues", dom)
+        self.assertIn("Subscriptions", dom)
         self.assertIn("idle for 2+ days", dom, "idle sessions")
-        self.assertIn("extra usage", dom, "real spend")
+        self.assertIn("Migrate auth to OAuth 2.1", dom, "Claude chats")
+        self.assertIn('<span class="inst">Codex</span>', dom, "Codex chats are tagged")
+        self.assertIn("Claude Team", dom)
+        self.assertIn("Fable", dom, "model-specific weekly limit")
+        self.assertIn("left at reset", dom, "window pace")
+        self.assertIn('class="tick"', dom, "even-pace mark")
+        self.assertEqual(count(r'class="cost-pair"'), 4, "one overall total and three account summaries")
+        self.assertIn('id="subscription-total"', dom)
+        self.assertNotIn("Jeff", dom)
+        self.assertNotIn("× subscription", dom)
         self.assertNotIn("Loading…", dom)
         self.assertRegex(dom, r'id="time">\d{1,2}:\d{2}<', "clock")
 
     def test_polish_interface(self):
         dom = self.render("pl")
         self.assertIn("Kalendarz", dom)
-        self.assertIn("czeka na Ciebie", dom)
+        self.assertIn("wymaga Twojej uwagi", dom)
 
     def test_short_bar_display(self):
         dom = self.render("en", "1920,720")

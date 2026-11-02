@@ -278,7 +278,8 @@ class OpenUsageAccounts(Temp):
             {"providerId": "claude@1a2b", "plan": "Team", "displayName": "Claude: Zeta Corp (me@zeta.example)",
              "lines": [{"label": "Weekly", "type": "progress", "used": 25, "limit": 100}]},
             {"providerId": "claude@3c4d", "plan": "Max", "displayName": "Claude: Acme (Labs) (me@acme.example)",
-             "lines": [{"label": "Session", "type": "progress", "used": 5, "limit": 100}]},
+             "lines": [{"label": "Session", "type": "progress", "used": 5, "limit": 100},
+                       {"label": "Fable", "type": "progress", "format": {"kind": "percent"}, "used": 30, "limit": 100}]},
         ]
         body = json.dumps(providers).encode()
 
@@ -303,13 +304,58 @@ class OpenUsageAccounts(Temp):
         self.assertEqual(accounts[1]["weekly"]["pct"], 25)
         self.assertIsNone(accounts[1]["session"])
 
+    def test_missing_today_line_means_no_usage_today(self):
+        line = lambda label, value: {"label": label, "type": "text", "value": value}
+        idle = server.parse_provider({"plan": "Plus", "lines": [line("Last 30 Days", "$225.76 · 715M tokens")]}, "codex")
+        self.assertEqual((idle["today"], idle["month"]), (0.0, 225.76))
+        self.assertIsNone(server.parse_provider({"plan": "Plus", "lines": []}, "codex")["today"])
+
+    def test_subscription_cards_list_every_limit_window(self):
+        cards = server.subscriptions(server.usage()["data"])
+        self.assertEqual([(c["id"], c["label"]) for c in cards],
+                         [("claude", "Claude Pro"), ("claude@3c4d", "Claude Max"), ("claude@1a2b", "Claude Team")])
+        self.assertEqual([(w["label"], w["usedPercent"]) for w in cards[1]["windows"]], [("session", 5), ("Fable", 30)])
+        self.assertEqual([w["label"] for w in cards[2]["windows"]], ["weekly"])
+
+    def test_subscription_labels_from_config_and_same_plan_logins(self):
+        self.addCleanup(setattr, server, "CONFIG", server.CONFIG)
+        server.CONFIG = {"subscriptionLabels": {"claude": "Personal"}}
+        data = server.usage()["data"]
+        data["claudeAccounts"][1]["plan"] = "Max 5x"  # two Max logins; the multiplier is not part of the name
+        self.assertEqual([c["label"] for c in server.subscriptions(data)],
+                         ["Personal", "Claude Max · Acme (Labs)", "Claude Max · Zeta Corp"])
+
+
+class WindowPace(unittest.TestCase):
+    WEEK = 7 * 24 * 3600 * 1000
+
+    def setUp(self):
+        self.addCleanup(setattr, server, "now_ms", server.now_ms)
+        server.now_ms = lambda: 10 ** 12
+
+    def bar(self, pct, elapsed_share):
+        return {"pct": pct, "windowMs": self.WEEK, "resetsAt": 10 ** 12 + int(self.WEEK * (1 - elapsed_share))}
+
+    def test_faster_than_even_runs_out_before_reset(self):
+        p = server.window_pace(self.bar(60, 0.5))
+        self.assertEqual((p["expected"], p["projected"], p["beforeReset"]), (50, 120, True))
+        self.assertEqual(p["eta"], 10 ** 12 + int(40 * self.WEEK / 2 / 60))
+
+    def test_slower_than_even_lasts_to_reset(self):
+        p = server.window_pace(self.bar(20, 0.5))
+        self.assertEqual((p["projected"], p["beforeReset"]), (40, False))
+
+    def test_first_minutes_of_a_window_have_no_pace(self):
+        self.assertIsNone(server.window_pace(self.bar(5, 0.01)))
+        self.assertIsNone(server.window_pace({"pct": 5, "resetsAt": 10 ** 12}))  # window length unknown
+
 
 class InstanceSpend(Temp):
     def setUp(self):
         super().setUp()
-        for name in ("CLAUDE_PROJECTS", "PARALL_DIR"):
+        for name in ("CLAUDE_PROJECTS", "PARALL_DIR", "HOME"):
             self.addCleanup(setattr, server, name, getattr(server, name))
-        server.CLAUDE_PROJECTS, server.PARALL_DIR = self.dir / "projects", self.dir / "Parall"
+        server.CLAUDE_PROJECTS, server.PARALL_DIR, server.HOME = self.dir / "projects", self.dir / "Parall", self.dir
         server._pricing.tables, server._pricing.loaded_at = [{"known-model": PRICE}], time.time()
         server._instance_spend["at"] = 0
         sessions = self.dir / "Parall" / "Claude (Work)" / "claude-code-sessions" / "acct" / "org"
@@ -317,17 +363,34 @@ class InstanceSpend(Temp):
         (sessions / "local_1.json").write_text(json.dumps({"cliSessionId": "work-1"}))
         now, old = time.time(), time.time() - 40 * 86400
         iso = lambda ts: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
-        msg = lambda i, ts: {"type": "assistant", "timestamp": iso(ts),
-                             "message": {"id": "m%d" % i, "model": "known-model", "usage": {"output_tokens": 1e6}}}
-        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-work" / "work-1.jsonl", [msg(1, now), msg(2, old)])
+        self.msg = lambda i, ts: {"type": "assistant", "timestamp": iso(ts),
+                                  "message": {"id": "m%d" % i, "model": "known-model", "usage": {"output_tokens": 1e6}}}
+        self.now, self.sessions = now, sessions
+        write_jsonl(server.CLAUDE_PROJECTS / "-tmp-work" / "work-1.jsonl", [self.msg(1, now), self.msg(2, old)])
 
     def test_cost_moves_from_main_card_to_its_account(self):
-        self.assertEqual(server.instance_spend(), {"Work": {"today": 15.0, "month": 15.0}})  # the 40-day-old reply is left out
+        # The 40-day-old reply is left out; all of it sits in the shared ~/.claude.
+        self.assertEqual(server.instance_spend(),
+                         {"Work": {"today": 15.0, "month": 15.0, "shared": {"today": 15.0, "month": 15.0}}})
         main = {"plan": "Pro", "today": 40.0, "month": 100.0, "multiple": 5.0}
         work = {"label": "Work", "plan": "Team", "today": None, "month": None, "multiple": None}
         server.attribute_spend(main, [work], server.instance_spend())
         self.assertEqual((work["today"], work["month"], work["multiple"]), (15.0, 15.0, 0.5))
         self.assertEqual((main["today"], main["month"], main["multiple"]), (25.0, 85.0, 4.2))
+
+    def test_own_config_dir_counts_whole_and_stays_off_the_main_card(self):
+        # An older session in the login's own config dir, plus a CLI run there that the app does not list.
+        (self.sessions / "local_2.json").write_text(json.dumps({"cliSessionId": "work-2"}))
+        own = self.dir / ".claude-work" / "projects" / "-tmp-work"
+        write_jsonl(own / "work-2.jsonl", [self.msg(3, self.now)])
+        write_jsonl(own / "cli-run.jsonl", [self.msg(4, self.now)])
+        spend = server.instance_spend()["Work"]
+        self.assertEqual((spend["today"], spend["month"], spend["shared"]["month"]), (45.0, 45.0, 15.0))
+        main = {"plan": "Pro", "today": 40.0, "month": 100.0, "multiple": 5.0}
+        work = {"label": "Work", "plan": "Team", "today": None, "month": 20.0, "multiple": None}  # OpenUsage: own dir only
+        server.attribute_spend(main, [work], server.instance_spend())
+        self.assertEqual((work["today"], work["month"]), (45.0, 45.0))
+        self.assertEqual((main["today"], main["month"]), (25.0, 85.0))
 
 
 class PullRequestGroups(unittest.TestCase):

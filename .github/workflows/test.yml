@@ -33,7 +33,7 @@ jobs:
         run: python3 -m unittest discover -s tests -v
 
       - name: Translation and Stream Deck plugin tests
-        run: node --test tests/i18n.test.mjs tests/streamdeck.test.mjs
+        run: node --test tests/costs.test.mjs tests/i18n.test.mjs tests/streamdeck.test.mjs
 
       - name: JavaScript syntax
         run: for f in static/*.js streamdeck/*.sdPlugin/*.js; do node --check "$f"; done

@@ -66,3 +66,13 @@ test("text is wrapped, shortened and escaped", () => {
   assert.equal(deck.duration(59 * MIN), "59m");
   assert.match(svg(deck.key({ top: "<b>&" })), /&lt;b&gt;&amp;/);
 });
+
+test("chats replace legacy session columns and subscription windows feed limits", () => {
+  const st = { chats: { sessions: [{ id: "c", tool: "codex", state: "waiting", time: 10, name: "Codex task" }] },
+    claude: { sessions: [{ id: "old", state: "waiting", time: 1 }] },
+    subscriptions: [{ label: "Claude Team", windows: [{ label: "session", usedPercent: 60, resetsAt: NOW + MIN }] }] };
+  assert.equal(deck.oldestWaiting(st).tool, "codex");
+  assert.equal(deck.oldestWaiting(st).id, "c");
+  assert.match(svg(deck.drawLimits(st, {}, NOW)), />Claude Team</);
+  assert.match(svg(deck.drawWaiting(st)), />1</);
+});

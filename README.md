@@ -12,27 +12,31 @@ open pull requests with CI status, and service status.
 
 ## Features
 
-- **Sessions in two columns (Claude, Codex)**: waiting for you, working, done, from the last 24 hours,
-  including Claude sessions the app has put to sleep. Sessions that wait for you are highlighted and
-  counted on the left. Click a session to open it in the app.
-- **Usage limits**: how much is left of the 5-hour and weekly limits, with reset time, a forecast when the current pace would
-  run out before the reset, and a banner when a limit is exhausted.
+- **Layout**: clock, calendar and local changes on the left; one **Chats** column in the middle;
+  **Subscriptions** above **Pull requests** on the right.
+- **Chats**: Claude Code and Codex sessions from the last 24 hours in one list, newest first (Codex rows are
+  tagged "Codex"), including Claude sessions the app has put to sleep. Sessions that wait for you are
+  highlighted and counted on the left. Click a session to open it in its app.
+- **Subscriptions**: one card per account in OpenUsage (Claude, further Claude logins, Codex) with every
+  limit in one row: 5 hours, week and model-specific weekly limits such as Fable. Each bar shows what is
+  left and the reset time. A tick on the bar marks where it would be at an even pace, and the line below
+  gives the pace: how much the window's average pace leaves at the reset, or when it runs out before it
+  (the recent pace from the usage history counts too).
   A second Claude login (added to OpenUsage with [Claude Swap](https://github.com/realiti4/claude-swap))
-  gets its own row of limits, and the column names both: "Claude - Personal", "Claude - <organization>".
+  gets its own card, named after its plan, and after its organization when two logins share a plan.
   When that login runs in a second Claude app made with [Parall](https://parall.app), its cost is counted
   from its sessions' transcripts and taken off the main account, which OpenUsage would otherwise charge.
-- **Cost**: today, last 30 days, multiple of your subscription, and an approximate per-chat cost at
-  API prices. Money you actually pay on top of the subscription (Claude extra usage, Codex credits)
-  is shown separately.
+- **Cost**: API-equivalent cost today and over 30 days per account and in total, and an approximate
+  per-chat cost at API prices.
 - **Idle sessions**: Claude sessions idle for 2+ days are dimmed, with their count and memory use.
 - **Local changes**: repositories of active sessions with uncommitted files or unpushed commits.
 - **Calendar**: upcoming meetings from macOS Calendar, with a "Join" bar from 10 minutes before a
   meeting until 10 minutes after it starts (Teams, Meet, Zoom, Webex links).
 - **Pull requests**: your open PRs and PRs waiting for your review, with CI status, from GitHub and
   GitLab, optionally split into groups.
-- **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each column title.
+- **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each subscription.
 - **Format checks**: Claude Code and Codex keep sessions in undocumented formats. If an update
-  changes them, the column shows "data format changed" with the detail, instead of going blank.
+  changes them, the Chats header shows "data format changed" with the detail, instead of going blank.
 - **Kiosk window**: a small native WebKit window (about 180 MB instead of a full browser) that covers
   a chosen monitor, including its menu bar, appears when the monitor is connected and goes away when
   it is unplugged. When another app opens a window on that monitor, the kiosk steps behind it until
@@ -81,6 +85,13 @@ for example personal and work. A group takes GitHub owners (users or orgs) and/o
 GitLab merge requests need [glab](https://gitlab.com/gitlab-org/cli) signed in with
 `glab auth login --hostname <host>`. PRs from other GitHub owners land in "Other".
 Restart the server after changing the file.
+
+Subscription cards are named after the tool and plan ("Claude Max", "Codex Plus"). To rename one, add
+`subscriptionLabels` to `config.json`, keyed by OpenUsage provider id (`claude`, `claude@<hash>`, `codex`):
+
+```json
+{ "subscriptionLabels": { "claude": "Claude Max" } }
+```
 
 To restart the kiosk window or the server (for example after editing `kiosk.conf`):
 
@@ -137,7 +148,7 @@ Tests (no dependencies; the UI smoke test uses headless Chrome when it is instal
 
 ```bash
 python3 -m unittest discover -s tests
-node --test tests/i18n.test.mjs tests/streamdeck.test.mjs
+node --test tests/costs.test.mjs tests/i18n.test.mjs tests/streamdeck.test.mjs
 ```
 
 GitHub Actions runs them on every push, together with a JavaScript syntax check and both Swift builds.

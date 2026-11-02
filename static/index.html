@@ -12,6 +12,7 @@
 <body>
   <main class="grid">
     <section class="card side">
+      <div class="desk-brand"><b>AI Panel</b></div>
       <header class="clock">
         <div class="time" id="time">--:--</div>
         <div class="date" id="date"></div>
@@ -32,11 +33,6 @@
         <ul id="events"></ul>
       </div>
 
-      <div class="prs">
-        <h2><span data-i18n="h.prs"></span> <span id="pr-count"></span></h2>
-        <ul id="prs"></ul>
-      </div>
-
       <div class="local"><ul id="local"></ul></div>
 
       <footer class="side-foot">
@@ -45,43 +41,32 @@
       </footer>
     </section>
 
-    <section class="card col" data-tool="claude">
-      <header class="col-head">
-        <div class="col-title">
-          <span class="glyph claude" aria-hidden="true">✳</span>
-          <h1 data-name="Claude">Claude</h1>
-          <span class="plan"></span>
-          <span class="svc"></span>
-          <span class="health"></span>
-          <div class="money"><span class="cost"></span><span class="spend"></span></div>
-        </div>
-        <div class="bars"></div>
-        <div class="accts"></div>
-      </header>
-      <div class="banner"></div>
-      <ul class="sessions"></ul>
-      <div class="col-foot"></div>
-    </section>
+    <div class="desk-main">
+      <section class="card col chats">
+        <header class="col-head">
+          <div class="col-title"><h1 data-i18n="desk.chats"></h1><span class="plan" id="chat-count"></span><span class="health"></span></div>
+        </header>
+        <div class="banner" id="chat-error" role="status"></div>
+        <ul class="sessions"></ul>
+        <div class="col-foot"></div>
+      </section>
+    </div>
 
-    <section class="card col" data-tool="codex">
-      <header class="col-head">
-        <div class="col-title">
-          <span class="glyph codex" aria-hidden="true">&gt;_</span>
-          <h1 data-name="Codex">Codex</h1>
-          <span class="plan"></span>
-          <span class="svc"></span>
-          <span class="health"></span>
-          <div class="money"><span class="cost"></span><span class="spend"></span></div>
+    <aside class="desk-right">
+      <section class="card subscriptions">
+        <div class="section-heading subscriptions-heading"><h2 data-i18n="desk.subscriptions"></h2><div id="subscription-total"></div><span class="section-note" data-i18n="desk.remaining"></span></div>
+        <div id="subscriptions"></div>
+      </section>
+      <section class="card attention">
+        <div class="prs">
+          <h2><span data-i18n="h.prs"></span> <span id="pr-count"></span></h2>
+          <ul id="prs"></ul>
         </div>
-        <div class="bars"></div>
-        <div class="accts"></div>
-      </header>
-      <div class="banner"></div>
-      <ul class="sessions"></ul>
-      <div class="col-foot"></div>
-    </section>
+      </section>
+    </aside>
   </main>
   <script src="i18n.js"></script>
+  <script src="costs.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
