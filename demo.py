@@ -74,7 +74,7 @@ def state():
     claude_usage["extra"] = {"used": 12.40, "limit": 50}
     codex_usage = _usage("Plus", 23, 12, 3.1, 64.0, 3.2, 9, 3 * HOUR)
     codex_usage["credits"] = 18.50
-    return {
+    data = {
         "now": now,
         "local": {"data": [
             {"repo": "web-shop", "branch": "feat/dark-mode", "files": 3, "ahead": 2, "noRemote": False},
@@ -107,3 +107,18 @@ def state():
             "codex": {"indicator": "none", "description": "All Systems Operational", "incident": None},
         },
     }
+
+    data["chats"] = {"sessions": [dict(s, tool=s["source"]) for s in claude + codex], "error": None}
+    accounts = [("claude", "Claude Max", claude_usage), ("claude@demo", "Claude Team", data["claude"]["accounts"][0]),
+                ("codex", "Codex Plus", codex_usage)]
+    data["subscriptions"] = [
+        {"id": pid, "label": label, "plan": u["plan"], "sampledAt": now - MIN, "stale": False,
+         "cost": dict(u, sampledAt=now - MIN),
+         "windows": [{"label": kind, "usedPercent": u[kind]["pct"], "resetsAt": u[kind]["resetsAt"],
+                      "forecast": u[kind].get("forecast")} for kind in ("session", "weekly")]}
+        for pid, label, u in accounts
+    ]
+    # A model-specific weekly limit, as OpenUsage reports for Claude Max.
+    data["subscriptions"][0]["windows"].append({"label": "Fable", "usedPercent": 30, "resetsAt": now + 4 * 24 * HOUR})
+    del data["claude"], data["codex"]
+    return data

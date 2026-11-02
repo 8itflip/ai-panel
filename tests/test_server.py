@@ -278,7 +278,8 @@ class OpenUsageAccounts(Temp):
             {"providerId": "claude@1a2b", "plan": "Team", "displayName": "Claude: Zeta Corp (me@zeta.example)",
              "lines": [{"label": "Weekly", "type": "progress", "used": 25, "limit": 100}]},
             {"providerId": "claude@3c4d", "plan": "Max", "displayName": "Claude: Acme (Labs) (me@acme.example)",
-             "lines": [{"label": "Session", "type": "progress", "used": 5, "limit": 100}]},
+             "lines": [{"label": "Session", "type": "progress", "used": 5, "limit": 100},
+                       {"label": "Fable", "type": "progress", "format": {"kind": "percent"}, "used": 30, "limit": 100}]},
         ]
         body = json.dumps(providers).encode()
 
@@ -302,6 +303,21 @@ class OpenUsageAccounts(Temp):
         self.assertEqual([(a["label"], a["plan"]) for a in accounts], [("Acme (Labs)", "Max"), ("Zeta Corp", "Team")])
         self.assertEqual(accounts[1]["weekly"]["pct"], 25)
         self.assertIsNone(accounts[1]["session"])
+
+    def test_subscription_cards_list_every_limit_window(self):
+        cards = server.subscriptions(server.usage()["data"])
+        self.assertEqual([(c["id"], c["label"]) for c in cards],
+                         [("claude", "Claude Pro"), ("claude@3c4d", "Claude Max"), ("claude@1a2b", "Claude Team")])
+        self.assertEqual([(w["label"], w["usedPercent"]) for w in cards[1]["windows"]], [("session", 5), ("Fable", 30)])
+        self.assertEqual([w["label"] for w in cards[2]["windows"]], ["weekly"])
+
+    def test_subscription_labels_from_config_and_same_plan_logins(self):
+        self.addCleanup(setattr, server, "CONFIG", server.CONFIG)
+        server.CONFIG = {"subscriptionLabels": {"claude": "Personal"}}
+        data = server.usage()["data"]
+        data["claudeAccounts"][1]["plan"] = "Max"  # two Max logins
+        self.assertEqual([c["label"] for c in server.subscriptions(data)],
+                         ["Personal", "Claude Max · Acme (Labs)", "Claude Max · Zeta Corp"])
 
 
 class InstanceSpend(Temp):
