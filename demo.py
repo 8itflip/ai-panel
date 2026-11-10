@@ -105,7 +105,8 @@ def state():
         "prs": [
             {"name": name, "error": None, "loading": False, "items": [
                 {"url": "https://github.com/example/%s/pull/%d" % (repo, n), "ref": "#%d" % n, "title": title,
-                 "repo": repo, "ci": ci, "decision": dec, "draft": draft, "review": review, "updated": now - i * HOUR}
+                 "repo": repo, "ci": ci, "decision": dec, "draft": draft, "review": review, "updated": now - i * HOUR,
+                 "created": now - (i * 7 + 2) * HOUR}
                 for i, (title, repo, n, ci, dec, draft, review) in enumerate(prs) if i in idx
             ]} for name, idx in (("Personal", (3,)), ("Work", (0, 1, 2)), ("Docs", (4,)))
         ],
