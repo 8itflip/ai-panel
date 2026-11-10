@@ -420,6 +420,77 @@ class PullRequestGroups(unittest.TestCase):
         groups = server.pr_groups()
         self.assertEqual([len(g["items"]) for g in groups], [3])
 
+    def test_pipelines_use_the_same_groups(self):
+        for name in ("_gitlab_pipelines",):
+            self.addCleanup(setattr, server, name, getattr(server, name))
+        self.addCleanup(setattr, server._github_pipelines, "value", server._github_pipelines.value)
+        server._github_pipelines.value = [{"url": "https://github.com/me/a/actions/runs/1", "owner": "me"},
+                                          {"url": "https://github.com/someone/c/actions/runs/3", "owner": "someone"}]
+        server._github_pipelines.at = time.time()
+        gitlab = server.Poller(lambda: [], 60)
+        gitlab.value, gitlab.at = [{"url": "https://gitlab.example.com/x/-/pipelines/7"}], time.time()
+        server._gitlab_pipelines = {"gitlab.example.com": gitlab}
+        server.PR_GROUPS = [{"name": "Personal", "github": ["me"]},
+                            {"name": "Client", "gitlab": "gitlab.example.com"}]
+        groups = {g["name"] or "other": len(g["items"]) for g in server.pipeline_groups()}
+        self.assertEqual(groups, {"Personal": 1, "Client": 1, "other": 1})
+
+
+def _run(rid, workflow, branch, status, conclusion, updated):
+    return {"id": rid, "workflow_id": workflow, "name": "CI", "display_title": "commit %d" % rid,
+            "head_branch": branch, "status": status, "conclusion": conclusion, "updated_at": updated,
+            "html_url": "https://github.com/me/a/actions/runs/%d" % rid}
+
+
+class Pipelines(unittest.TestCase):
+    def setUp(self):
+        self.addCleanup(setattr, server, "gh_api", server.gh_api)
+        self.addCleanup(setattr, server, "glab_graphql", server.glab_graphql)
+        self.addCleanup(server._gitlab_users.clear)
+        self.recent = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3600))
+        self.old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 10 * 86400))
+
+    def test_github_keeps_the_latest_run_per_workflow_and_branch(self):
+        repos = {"data": {"viewer": {"login": "me", "repositories": {"nodes": [
+            {"name": "a", "pushedAt": self.recent, "isArchived": False, "owner": {"login": "me"}},
+            {"name": "stale", "pushedAt": self.old, "isArchived": False, "owner": {"login": "me"}},
+        ]}}}}
+        runs = {"workflow_runs": [
+            _run(3, 1, "main", "in_progress", None, self.recent),
+            _run(2, 1, "main", "completed", "failure", self.recent),  # older run of the same workflow
+            _run(1, 1, "feat/x", "completed", "timed_out", self.recent),
+            _run(0, 2, "main", "completed", "cancelled", self.old),  # outside the window
+        ]}
+        calls = []
+
+        def fake(*args):
+            calls.append(args)
+            return repos if args[0] == "graphql" else runs
+        server.gh_api = fake
+        items = server.github_pipelines()
+        self.assertEqual([(p["branch"], p["ci"]) for p in items], [("main", "pending"), ("feat/x", "failure")])
+        self.assertEqual(len(calls), 2, "a repository not pushed recently is not asked for runs")
+        self.assertIn("actor=me", calls[1][0])
+
+    def test_gitlab_shows_merge_requests_by_number(self):
+        def fake(host, query):
+            if "contributedProjects" not in query:
+                return {"currentUser": {"username": "me"}}
+            self.assertIn('username: "me"', query)
+            return {"currentUser": {"contributedProjects": {"nodes": [{"name": "infra", "pipelines": {"nodes": [
+                {"status": "RUNNING", "ref": "refs/merge-requests/12/head", "updatedAt": self.recent,
+                 "path": "/g/infra/-/pipelines/2", "commit": {"title": "Fix"}},
+                {"status": "FAILED", "ref": "refs/merge-requests/12/head", "updatedAt": self.recent,
+                 "path": "/g/infra/-/pipelines/1", "commit": {"title": "Fix"}},
+                {"status": "CANCELED", "ref": "main", "updatedAt": self.recent,
+                 "path": "/g/infra/-/pipelines/0", "commit": None},
+            ]}}]}}}
+        server.glab_graphql = fake
+        items = server.gitlab_pipelines("gitlab.example.com")
+        self.assertEqual([(p["branch"], p["ci"], p["url"]) for p in items], [
+            ("!12", "pending", "https://gitlab.example.com/g/infra/-/pipelines/2"),
+            ("main", "cancelled", "https://gitlab.example.com/g/infra/-/pipelines/0")])
+
 
 class CheckerStart(unittest.TestCase):
     def test_parallel_requests_start_the_git_checker_once(self):

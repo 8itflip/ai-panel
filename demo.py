@@ -70,6 +70,13 @@ def state():
         ("Dark mode for dashboard", "web-shop", 341, "success", None, False, False),
         ("Release notes 2.4", "docs", 57, None, None, True, False),
     ]
+    pipelines = [
+        ("Add request tracing", "acme-api", "feat/tracing", "CI", "pending", 2 * MIN),
+        ("Merge pull request #212", "acme-api", "main", "Deploy", "success", 40 * MIN),
+        ("Fix cache eviction in resizer", "infra", "fix/cache-eviction", "CI", "failure", 3 * HOUR),
+        ("Dark mode for dashboard", "web-shop", "feat/dark-mode", "CI", "success", 5 * HOUR),
+        ("Release notes 2.4", "docs", "release/2.4", "Pages", "cancelled", 26 * HOUR),
+    ]
     claude_usage = _usage("Max", 72, 41, 48.2, 912.0, 9.1, 58, 95 * MIN, {"eta": now + 70 * MIN, "beforeReset": True})
     claude_usage["extra"] = {"used": 12.40, "limit": 50}
     codex_usage = _usage("Plus", 23, 12, 3.1, 64.0, 3.2, 9, 3 * HOUR)
@@ -100,6 +107,13 @@ def state():
                 {"url": "https://github.com/example/%s/pull/%d" % (repo, n), "ref": "#%d" % n, "title": title,
                  "repo": repo, "ci": ci, "decision": dec, "draft": draft, "review": review, "updated": now - i * HOUR}
                 for i, (title, repo, n, ci, dec, draft, review) in enumerate(prs) if i in idx
+            ]} for name, idx in (("Personal", (3,)), ("Work", (0, 1, 2)), ("Docs", (4,)))
+        ],
+        "pipelines": [
+            {"name": name, "error": None, "loading": False, "items": [
+                {"url": "https://github.com/example/%s/actions/runs/%d" % (repo, 9000 + i), "title": title,
+                 "repo": repo, "branch": branch, "workflow": workflow, "ci": ci, "updated": now - ago}
+                for i, (title, repo, branch, workflow, ci, ago) in enumerate(pipelines) if i in idx
             ]} for name, idx in (("Personal", (3,)), ("Work", (0, 1, 2)), ("Docs", (4,)))
         ],
         "status": {
