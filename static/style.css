@@ -380,6 +380,7 @@ h2 {
 .desk-brand { display: flex; align-items: center; gap: .6rem; margin-bottom: .5rem; }
 .desk-brand b { font-size: 1.25rem; letter-spacing: -.04em; }
 .desk-main, .desk-right { display: flex; flex-direction: column; gap: 1rem; min-height: 0; }
+.desk-right { gap: 0.5rem; }
 .desk-main .chats { flex: 1 1 0; }
 .subscriptions { padding: 1rem 1.3rem; flex: 0 0 auto; max-height: 62%; overflow-y: auto; }
 #subscriptions { display: grid; grid-template-columns: minmax(0, 1fr); row-gap: .35rem; }
