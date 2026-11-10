@@ -29,10 +29,10 @@ Działa w całości lokalnie, bez zależności (Python 3 ze standardową bibliot
 | Koszt i tokeny dziś | API OpenUsage (j.w.) |
 | Prognoza limitu | historia odczytów OpenUsage w `~/Library/Caches/ai-panel/usage-history.json` (tempo z ostatnich 45 min / 24 h) |
 | Lokalne zmiany | `git status` (bez blokady indeksu) w repozytoriach aktywnych sesji, co minutę |
-| Pull requesty i CI | `gh api graphql` co 2 min: Twoje otwarte PR-y + PR-y czekające na Twoje review |
-| Pipeline'y | co 2 min: Twoje uruchomienia z ostatnich 3 dni, najnowsze na gałąź — GitHub Actions (`gh api`) w ostatnio pushowanych repo, GitLab (`glab api graphql`) w projektach, w których pracujesz |
-| Merge requesty z GitLaba | `glab api graphql` co 2 min, dla grup z hostem GitLaba w `config.json` (to samo: Twoje + do review) |
-| Status usług | publiczne `status.claude.com` i `status.openai.com` (`/api/v2/summary.json`) co 2 min |
+| Pull requesty i CI | `gh api graphql` co minutę: Twoje otwarte PR-y + PR-y czekające na Twoje review |
+| Pipeline'y | co minutę: Twoje uruchomienia z ostatnich 3 dni, najnowsze na gałąź — GitHub Actions (`gh api`) w ostatnio pushowanych repo, GitLab (`glab api graphql`) w projektach, w których pracujesz |
+| Merge requesty z GitLaba | `glab api graphql` co minutę, dla grup z hostem GitLaba w `config.json` (to samo: Twoje + do review) |
+| Status usług | publiczne `status.claude.com` i `status.openai.com` (`/api/v2/summary.json`) co minutę |
 
 Kliknięcie: sesja → aplikacja Claude/Codex (właściwa instancja, także z Parall), PR → przeglądarka,
 spotkanie z linkiem → Teams/Meet. Klient podaje tylko, co otworzyć; adres zawsze pochodzi z danych serwera.
