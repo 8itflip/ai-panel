@@ -364,13 +364,6 @@ function renderCalendar(cal) {
 const CI = { success: "ci.success", failure: "ci.failure", error: "ci.error", pending: "ci.pending", expected: "ci.pending",
   cancelled: "ci.cancelled" };
 
-function prRank(p) {
-  if (p.review) return 0; // someone is waiting for your review
-  if (p.ci === "failure" || p.ci === "error" || p.decision === "CHANGES_REQUESTED") return 1;
-  if (p.decision === "APPROVED") return 2;
-  return p.draft ? 4 : 3;
-}
-
 function prRow(p, group) {
   const tags = [
     p.review && `<span class="tag review">${t("pr.review")}</span>`,
@@ -380,7 +373,7 @@ function prRow(p, group) {
   ].filter(Boolean).join("");
   return `<li class="pr" data-g="${group}" data-open="pr" data-url="${esc(p.url)}">
     <span class="ci ${esc(p.ci || "none")}" title="${esc(t(CI[p.ci] || "ci.none"))}"></span>
-    <div><div class="t">${esc(p.title)}</div><div class="m">${esc(p.repo)} ${esc(p.ref)} ${tags}</div></div>
+    <div><div class="t">${esc(p.title)}</div><div class="m">${esc(p.repo)} ${esc(p.ref)}${p.created ? ` · <span data-ago="${p.created}" title="${esc(t("pr.created"))}"></span>` : ""} ${tags}</div></div>
   </li>`;
 }
 
@@ -453,7 +446,7 @@ function renderGroups(groups, o) {
   const named = groups.length > 1 || groups[0]?.name;
   let html = "";
   groups.forEach((g, gi) => {
-    const items = [...g.items].sort((a, b) => (o.rank(a) - o.rank(b)) || (b.updated - a.updated));
+    const items = [...g.items].sort((a, b) => (o.rank(a) - o.rank(b)) || (o.time(b) - o.time(a)));
     const open = !named || isOpen(g, o.prefix);
     if (named) {
       const name = g.other ? t("pr.other") : g.name;
@@ -472,8 +465,9 @@ function renderGroups(groups, o) {
 }
 
 function renderPRs(groups) {
-  renderGroups(groups, { list: "#prs", count: "#pr-count", sig: "prs", prefix: "", rank: prRank, row: prRow,
-    none: "pr.none", more: "more.prs" });
+  // Newest first: rows that do not fit are the oldest ones.
+  renderGroups(groups, { list: "#prs", count: "#pr-count", sig: "prs", prefix: "", rank: () => 0,
+    time: (p) => p.created || p.updated || 0, row: prRow, none: "pr.none", more: "more.prs" });
 }
 
 /* ---------- pipelines ---------- */
@@ -493,7 +487,7 @@ function pipelineRow(p, group) {
 
 function renderPipelines(groups) {
   renderGroups(groups, { list: "#pipelines", count: "#pipeline-count", sig: "pipelines", prefix: "pl:",
-    rank: pipelineRank, row: pipelineRow, none: "pl.none", more: "more.pipelines" });
+    rank: pipelineRank, time: (p) => p.updated || 0, row: pipelineRow, none: "pl.none", more: "more.pipelines" });
 }
 
 /* ---------- local changes in session repositories ---------- */
