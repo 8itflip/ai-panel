@@ -263,8 +263,8 @@ h2 {
 .ev.link:hover, .ev.link.hover { background: var(--line); }
 
 .prs { flex: 0 1 auto; max-height: 38%; min-height: 0; display: flex; flex-direction: column; }
-#pr-count { color: var(--faint); margin-left: 0.2rem; }
-#prs { overflow: hidden; display: flex; flex-direction: column; gap: 0.1rem; min-height: 0; }
+#pr-count, #pipeline-count { color: var(--faint); margin-left: 0.2rem; }
+#prs, #pipelines { overflow: hidden; display: flex; flex-direction: column; gap: 0.1rem; min-height: 0; }
 .pr {
   display: grid; grid-template-columns: 0.7rem 1fr; column-gap: 0.7rem; align-items: center;
   padding: 0.35rem 0.5rem 0.35rem 0.2rem; border-radius: 0.6rem; cursor: pointer;
@@ -277,6 +277,7 @@ h2 {
 .ci.success { background: var(--done); }
 .ci.failure, .ci.error { background: var(--wait); }
 .ci.pending, .ci.expected { background: var(--work); }
+.ci.cancelled { background: none; box-shadow: inset 0 0 0 2px var(--faint); }
 .tag {
   font-size: 0.7rem; font-weight: 600; border: 1px solid var(--line); border-radius: 1rem;
   padding: 0 0.4rem; margin-left: 0.25rem; color: var(--muted);

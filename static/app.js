@@ -361,7 +361,8 @@ function renderCalendar(cal) {
 
 /* ---------- pull requests ---------- */
 
-const CI = { success: "ci.success", failure: "ci.failure", error: "ci.error", pending: "ci.pending", expected: "ci.pending" };
+const CI = { success: "ci.success", failure: "ci.failure", error: "ci.error", pending: "ci.pending", expected: "ci.pending",
+  cancelled: "ci.cancelled" };
 
 function prRank(p) {
   if (p.review) return 0; // someone is waiting for your review
@@ -389,7 +390,7 @@ function prGroupMessage(g) {
   return t(g.loading ? "pr.loading" : "pr.none");
 }
 
-function fitGroups(ul) {
+function fitGroups(ul, moreKey = "more.prs") {
   // Not enough room: trim the group with the most visible rows. If even one row per group does not
   // fit, a group keeps only its "+N more" line, so nothing is cut in half.
   const hidden = {};
@@ -404,7 +405,7 @@ function fitGroups(ul) {
     hidden[g] = (hidden[g] || 0) + 1;
     const more = ul.querySelector(`[data-more="${g}"]`);
     more.hidden = false;
-    more.textContent = t("more.prs", { n: hidden[g] });
+    more.textContent = t(moreKey, { n: hidden[g] });
   }
 }
 
@@ -413,22 +414,24 @@ function fitGroups(ul) {
 let prOpen = {};
 try { prOpen = JSON.parse(localStorage.getItem("prOpen") || "{}"); } catch (e) {}
 
-const groupKey = (g) => (g.other ? "__other" : g.name || "__all");
+// Pipeline groups share the saved choices with PR groups, under keys with a "pl:" prefix.
+const groupKey = (g, prefix = "") => prefix + (g.other ? "__other" : g.name || "__all");
 const needsAttention = (g) => g.items.some((p) => p.review || p.ci === "failure" || p.ci === "error");
-const isOpen = (g) => (groupKey(g) in prOpen ? prOpen[groupKey(g)] : needsAttention(g));
+const isOpen = (g, prefix = "") => (groupKey(g, prefix) in prOpen ? prOpen[groupKey(g, prefix)] : needsAttention(g));
 
 function toggleGroup(key, open) {
   prOpen[key] = open;
   try { localStorage.setItem("prOpen", JSON.stringify(prOpen)); } catch (e) {}
   delete sigs.prs;
+  delete sigs.pipelines;
   delete sigs.local;
   render();
 }
 
-function groupSummary(g) {
+function groupSummary(g, noneKey = "pr.none") {
   if (!g.items.length) {
     if (g.error) return `<span class="warn">${esc(t(g.error.startsWith("glab_") ? "pr.notConnected" : "pr.failed"))}</span>`;
-    return esc(t(g.loading ? "pr.loading" : "pr.none"));
+    return esc(t(g.loading ? "pr.loading" : noneKey));
   }
   const n = (f) => g.items.filter(f).length;
   const ci = [["success", n((p) => p.ci === "success")], ["failure", n((p) => p.ci === "failure" || p.ci === "error")],
@@ -438,31 +441,59 @@ function groupSummary(g) {
   return `<b>${g.items.length}</b>${ci}${review ? `<span class="tag review">${esc(t("pr.toReview", { n: review }))}</span>` : ""}`;
 }
 
-function renderPRs(groups) {
-  const ul = $("#prs");
+/* A list split into the groups from config.json: pull requests and pipelines share it. */
+function renderGroups(groups, o) {
+  const ul = $(o.list);
   groups = groups || [];
   const total = groups.reduce((n, g) => n + g.items.length, 0);
-  $("#pr-count").textContent = total || "";
-  const sig = JSON.stringify([groups, groups.map(isOpen)]);
-  if (sigs.prs === sig) return;
-  sigs.prs = sig;
+  $(o.count).textContent = total || "";
+  const sig = JSON.stringify([groups, groups.map((g) => isOpen(g, o.prefix))]);
+  if (sigs[o.sig] === sig) return;
+  sigs[o.sig] = sig;
   const named = groups.length > 1 || groups[0]?.name;
   let html = "";
   groups.forEach((g, gi) => {
-    const items = [...g.items].sort((a, b) => (prRank(a) - prRank(b)) || (b.updated - a.updated));
-    const open = !named || isOpen(g);
+    const items = [...g.items].sort((a, b) => (o.rank(a) - o.rank(b)) || (b.updated - a.updated));
+    const open = !named || isOpen(g, o.prefix);
     if (named) {
       const name = g.other ? t("pr.other") : g.name;
-      html += `<li class="pr-group${open ? " open" : ""}" data-toggle="${esc(groupKey(g))}" data-state="${open ? 1 : 0}">
-        <span class="chev"></span><span class="gn">${esc(name)}</span><span class="sum">${groupSummary(g)}</span></li>`;
+      html += `<li class="pr-group${open ? " open" : ""}" data-toggle="${esc(groupKey(g, o.prefix))}" data-state="${open ? 1 : 0}">
+        <span class="chev"></span><span class="gn">${esc(name)}</span><span class="sum">${groupSummary(g, o.none)}</span></li>`;
     }
     if (!open) return;
-    if (!items.length) html += `<li class="empty">${esc(prGroupMessage(g))}</li>`;
-    else if (g.error) html += `<li class="empty warn">${esc(prGroupMessage(g))}</li>`;
-    html += items.map((p) => prRow(p, gi)).join("") + `<li class="more" data-more="${gi}" hidden></li>`;
+    const message = g.error ? prGroupMessage(g) : t(g.loading ? "pr.loading" : o.none);
+    if (!items.length) html += `<li class="empty">${esc(message)}</li>`;
+    else if (g.error) html += `<li class="empty warn">${esc(message)}</li>`;
+    html += items.map((p) => o.row(p, gi)).join("") + `<li class="more" data-more="${gi}" hidden></li>`;
   });
   ul.innerHTML = html || `<li class="empty">${t("pr.loading")}</li>`;
-  fitGroups(ul);
+  fillTimes(ul);
+  fitGroups(ul, o.more);
+}
+
+function renderPRs(groups) {
+  renderGroups(groups, { list: "#prs", count: "#pr-count", sig: "prs", prefix: "", rank: prRank, row: prRow,
+    none: "pr.none", more: "more.prs" });
+}
+
+/* ---------- pipelines ---------- */
+
+function pipelineRank(p) {
+  if (p.ci === "failure" || p.ci === "error") return 0;
+  return p.ci === "pending" ? 1 : 2;
+}
+
+function pipelineRow(p, group) {
+  const meta = [p.repo, p.branch, p.workflow].filter(Boolean).map(esc).join(" · ");
+  return `<li class="pr" data-g="${group}" data-open="pipeline" data-url="${esc(p.url)}">
+    <span class="ci ${esc(p.ci || "none")}" title="${esc(t(CI[p.ci] || "ci.none"))}"></span>
+    <div><div class="t">${esc(p.title)}</div><div class="m">${meta} · <span data-ago="${p.updated || Date.now()}"></span></div></div>
+  </li>`;
+}
+
+function renderPipelines(groups) {
+  renderGroups(groups, { list: "#pipelines", count: "#pipeline-count", sig: "pipelines", prefix: "pl:",
+    rank: pipelineRank, row: pipelineRow, none: "pl.none", more: "more.pipelines" });
 }
 
 /* ---------- local changes in session repositories ---------- */
@@ -553,6 +584,7 @@ function render() {
   renderSubscriptions(last.subscriptions || []);
   renderLocal(last.local);
   renderPRs(last.prs);
+  renderPipelines(last.pipelines);
   renderCalendar(last.calendar || {});
   tickClock();
 }
@@ -585,7 +617,7 @@ document.addEventListener("click", async (ev) => {
   if (!el) return;
   const d = el.dataset;
   const body = d.open === "session" ? { kind: "session", tool: d.tool, id: d.id }
-    : d.open === "pr" ? { kind: "pr", url: d.url }
+    : d.open === "pr" || d.open === "pipeline" ? { kind: d.open, url: d.url }
     : { kind: "event", start: +d.start, title: d.title };
   el.classList.add("opening");
   setTimeout(() => el.classList.remove("opening"), 900);
