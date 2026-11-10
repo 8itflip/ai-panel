@@ -34,6 +34,9 @@ open pull requests with CI status, and service status.
   meeting until 10 minutes after it starts (Teams, Meet, Zoom, Webex links).
 - **Pull requests**: your open PRs and PRs waiting for your review, with CI status, from GitHub and
   GitLab, optionally split into groups.
+- **Pipelines**: CI runs you started in the last 3 days (GitHub Actions in your recently pushed
+  repositories, GitLab pipelines in projects you contribute to), the latest one per branch, split into
+  the same groups as pull requests.
 - **Service status**: Anthropic and OpenAI status pages, shown as a dot next to each subscription.
 - **Format checks**: Claude Code and Codex keep sessions in undocumented formats. If an update
   changes them, the Chats header shows "data format changed" with the detail, instead of going blank.
@@ -84,6 +87,7 @@ Copy `config.example.json` to `config.json` (kept out of git) to split pull requ
 for example personal and work. A group takes GitHub owners (users or orgs) and/or a GitLab host;
 GitLab merge requests need [glab](https://gitlab.com/gitlab-org/cli) signed in with
 `glab auth login --hostname <host>`. PRs from other GitHub owners land in "Other".
+The Pipelines block uses the same groups.
 Restart the server after changing the file.
 
 Subscription cards are named after the tool and plan ("Claude Max", "Codex Plus"). To rename one, add

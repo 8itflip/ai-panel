@@ -57,7 +57,9 @@ class UiSmoke(unittest.TestCase):
         count = lambda pattern: len(re.findall(pattern, dom))
         self.assertGreater(count(r'<li class="s '), 5, "session rows")
         self.assertGreater(count(r'<li class="ev '), 0, "calendar events")
-        self.assertGreater(count(r'class="pr-group'), 2, "pull request groups")
+        self.assertGreater(count(r'class="pr-group'), 5, "pull request and pipeline groups")
+        self.assertIn('data-toggle="pl:Work"', dom, "pipeline groups")
+        self.assertIn("Pipelines", dom)
         self.assertIn("Join", dom, "meeting bar")
         self.assertIn("runs out", dom, "limit forecast")
         self.assertIn("Local changes", dom, "local changes")
@@ -83,6 +85,11 @@ class UiSmoke(unittest.TestCase):
         dom = self.render("pl")
         self.assertIn("Kalendarz", dom)
         self.assertIn("wymaga Twojej uwagi", dom)
+
+    def test_tall_display_lists_pipeline_rows(self):
+        dom = self.render("en", "1920,1440")
+        self.assertIn('data-open="pipeline"', dom, "pipeline rows")
+        self.assertIn("fix/cache-eviction", dom, "a failing pipeline comes first")
 
     def test_short_bar_display(self):
         dom = self.render("en", "1920,720")

@@ -2,7 +2,7 @@
 """AI Panel — local server for a Claude Code and Codex session dashboard.
 
 Reads local files (Claude sessions, the Codex database, the calendar cache) and the OpenUsage API on localhost.
-The only outbound requests fetch the public Anthropic/OpenAI status pages and pull requests via `gh`/`glab`.
+The only outbound requests fetch the public Anthropic/OpenAI status pages and pull requests and pipelines via `gh`/`glab`.
 Nothing from this machine is sent anywhere.
 """
 import json
@@ -975,12 +975,12 @@ GL_PIPELINE = {"SUCCESS": "success", "FAILED": "failure", "RUNNING": "pending", 
                "CREATED": "pending", "PREPARING": "pending", "WAITING_FOR_RESOURCE": "pending"}
 
 
-def gitlab_mrs(host):
-    """GitLab merge requests via glab (signed in with: glab auth login --hostname <host>)."""
+def glab_graphql(host, query):
+    """One GraphQL query through glab (signed in with: glab auth login --hostname <host>)."""
     glab = GLAB or shutil.which("glab", path=_BIN_PATH)  # may have been installed after the server started
     if not glab:
         raise RuntimeError("glab_missing")
-    r = subprocess.run([glab, "api", "graphql", "--hostname", host, "-f", "query=" + GL_QUERY],
+    r = subprocess.run([glab, "api", "graphql", "--hostname", host, "-f", "query=" + query],
                        capture_output=True, text=True, timeout=30)
     if r.returncode:
         err = (r.stderr or r.stdout or "glab error").strip()
@@ -988,7 +988,12 @@ def gitlab_mrs(host):
     d = json.loads(r.stdout)
     if d.get("errors"):
         raise RuntimeError(d["errors"][0].get("message", "GraphQL error")[:200])
-    me = (d.get("data") or {}).get("currentUser") or {}
+    return d.get("data") or {}
+
+
+def gitlab_mrs(host):
+    """GitLab merge requests via glab."""
+    me = glab_graphql(host, GL_QUERY).get("currentUser") or {}
     out, seen = [], set()
     for n, review in [(n, True) for n in (me.get("review") or {}).get("nodes") or []] + \
                      [(n, False) for n in (me.get("authored") or {}).get("nodes") or []]:
@@ -1000,6 +1005,117 @@ def gitlab_mrs(host):
                 "draft": n.get("draft"), "review": review, "decision": None,
                 "ci": GL_PIPELINE.get(((n.get("headPipeline") or {}).get("status") or "").upper()),
                 "updated": iso_to_ms(n.get("updatedAt")),
+            })
+    return out
+
+
+# ---------- pipelines: your own CI runs from the last few days ----------
+
+PIPELINE_DAYS = 3
+PIPELINE_REPOS = 12  # repositories checked per GitHub poll, the most recently pushed first
+
+GH_REPOS_QUERY = """
+query {
+  viewer {
+    login
+    repositories(first: 30, orderBy: {field: PUSHED_AT, direction: DESC},
+                 ownerAffiliations: [OWNER, ORGANIZATION_MEMBER, COLLABORATOR]) {
+      nodes { name pushedAt isArchived owner { login } }
+    }
+  }
+}
+"""
+GH_RUN = {"success": "success", "neutral": "success", "failure": "failure", "timed_out": "failure",
+          "startup_failure": "failure", "cancelled": "cancelled", "skipped": "cancelled", "stale": "cancelled"}
+
+
+def pipeline_since():
+    return now_ms() - PIPELINE_DAYS * 24 * 3600 * 1000
+
+
+def gh_api(*args):
+    r = subprocess.run([GH, "api"] + list(args), capture_output=True, text=True, timeout=30)
+    if r.returncode:
+        raise RuntimeError((r.stderr or "gh error").strip()[:200])
+    return json.loads(r.stdout)
+
+
+def github_pipelines():
+    """GitHub Actions runs you started, the latest of each workflow on each branch."""
+    if not GH:
+        raise RuntimeError("gh_missing")
+    viewer = gh_api("graphql", "-f", "query=" + GH_REPOS_QUERY)["data"]["viewer"]
+    since = pipeline_since()
+    day = time.strftime("%Y-%m-%d", time.gmtime(since / 1000))
+    repos = [n for n in viewer["repositories"]["nodes"]
+             if n and not n.get("isArchived") and (iso_to_ms(n.get("pushedAt")) or 0) >= since][:PIPELINE_REPOS]
+    out, error = [], None
+    for repo in repos:
+        owner, name = repo["owner"]["login"], repo["name"]
+        try:
+            runs = gh_api("/repos/%s/%s/actions/runs?actor=%s&per_page=30&created=%%3E%%3D%s"
+                          % (owner, name, viewer["login"], day)).get("workflow_runs") or []
+        except RuntimeError as exc:  # one repository failing must not hide the others
+            error = error or str(exc)
+            continue
+        seen = set()
+        for run in runs:  # newest first
+            key = (run.get("workflow_id"), run.get("head_branch"))
+            updated = iso_to_ms(run.get("updated_at")) or 0
+            if key in seen or updated < since or not str(run.get("html_url", "")).startswith("https://"):
+                continue
+            seen.add(key)
+            done = run.get("status") == "completed"
+            out.append({
+                "url": run["html_url"], "title": run.get("display_title") or run.get("name") or "",
+                "repo": name, "owner": owner, "branch": run.get("head_branch") or "", "workflow": run.get("name"),
+                "ci": GH_RUN.get(run.get("conclusion"), "none") if done else "pending", "updated": updated,
+            })
+    if error and not out:
+        raise RuntimeError(error)
+    return out
+
+
+GL_PIPELINE_STATE = dict(GL_PIPELINE, CANCELED="cancelled", CANCELING="cancelled", SKIPPED="cancelled",
+                         MANUAL="pending", SCHEDULED="pending")
+_gitlab_users = {}
+
+
+def gitlab_pipelines(host):
+    """GitLab pipelines you started in projects you contribute to, the latest one per branch or MR."""
+    if host not in _gitlab_users:
+        _gitlab_users[host] = (glab_graphql(host, "query { currentUser { username } }").get("currentUser") or {})["username"]
+    since = pipeline_since()
+    after = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since / 1000))
+    query = """
+query {
+  currentUser {
+    contributedProjects(first: 20, sort: LATEST_ACTIVITY_DESC) {
+      nodes {
+        name lastActivityAt
+        pipelines(first: 10, username: %s, updatedAfter: %s) {
+          nodes { status ref updatedAt path commit { title } }
+        }
+      }
+    }
+  }
+}
+""" % (json.dumps(_gitlab_users[host]), json.dumps(after))
+    me = glab_graphql(host, query).get("currentUser") or {}
+    out = []
+    for project in (me.get("contributedProjects") or {}).get("nodes") or []:
+        seen = set()
+        for p in ((project or {}).get("pipelines") or {}).get("nodes") or []:  # newest first
+            ref = p.get("ref") or ""
+            if ref in seen or not p.get("path"):
+                continue
+            seen.add(ref)
+            mr = re.match(r"refs/merge-requests/(\d+)/", ref)
+            out.append({
+                "url": "https://%s%s" % (host, p["path"]), "title": (p.get("commit") or {}).get("title") or ref,
+                "repo": project.get("name") or "", "owner": None, "branch": "!" + mr.group(1) if mr else ref,
+                "workflow": None, "ci": GL_PIPELINE_STATE.get((p.get("status") or "").upper(), "none"),
+                "updated": iso_to_ms(p.get("updatedAt")),
             })
     return out
 
@@ -1023,6 +1139,9 @@ def service_status():
 
 _github = Poller(github_prs, SLOW_POLL)
 _gitlab = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_mrs(h), SLOW_POLL) for g in PR_GROUPS if g.get("gitlab")}
+_github_pipelines = Poller(github_pipelines, SLOW_POLL)
+_gitlab_pipelines = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_pipelines(h), SLOW_POLL)
+                     for g in PR_GROUPS if g.get("gitlab")}
 _status = Poller(service_status, SLOW_POLL)
 
 # Working folders of active sessions: updated on every /api/state, read by the git checker thread.
@@ -1087,7 +1206,16 @@ def start_local_checker():
 
 def pr_groups():
     """Pull requests split into the groups from config.json; other GitHub PRs go to "Other"."""
-    gh = _github.snapshot()
+    return split_groups(_github, _gitlab)
+
+
+def pipeline_groups():
+    """Your recent pipelines, split into the same groups as pull requests."""
+    return split_groups(_github_pipelines, _gitlab_pipelines)
+
+
+def split_groups(github, gitlab):
+    gh = github.snapshot()
     gh_items = gh["data"] or []
     out, claimed = [], set()
     for g in PR_GROUPS:
@@ -1101,7 +1229,7 @@ def pr_groups():
             errors.append(gh["error"])
             loading = loading or (gh["data"] is None and not gh["error"])
         if g.get("gitlab"):
-            snap = _gitlab[g["gitlab"]].snapshot()
+            snap = gitlab[g["gitlab"]].snapshot()
             items += snap["data"] or []
             errors.append(snap["error"])
             loading = loading or (snap["data"] is None and not snap["error"])
@@ -1198,6 +1326,7 @@ def state():
         "version": static_version(),
         "calendar": dict(cal, error=cal_err or cal.get("error")),
         "prs": pr_groups(),
+        "pipelines": pipeline_groups(),
         "health": dict(_health),
         "local": _local.snapshot(),
         "status": _status.snapshot()["data"] or {},
@@ -1226,9 +1355,10 @@ def open_target(body):
     url = None
     if kind == "session":
         return open_session(str(body.get("tool")), str(body.get("id")))
-    if kind == "pr":
+    if kind in ("pr", "pipeline"):
         want = str(body.get("url"))
-        known = list(_github.value or []) + [p for g in _gitlab.values() for p in g.value or []]
+        github, gitlab = (_github, _gitlab) if kind == "pr" else (_github_pipelines, _gitlab_pipelines)
+        known = list(github.value or []) + [p for g in gitlab.values() for p in g.value or []]
         if want.startswith("https://") and any(p["url"] == want for p in known):
             url = want
     elif kind == "event":
@@ -1295,7 +1425,8 @@ if __name__ == "__main__":
     print("AI Panel: http://127.0.0.1:%d" % PORT, flush=True)
     if not DEMO:
         _github.start()
+        _github_pipelines.start()
         _status.start()
-        for poller in _gitlab.values():
+        for poller in list(_gitlab.values()) + list(_gitlab_pipelines.values()):
             poller.start()
     ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
