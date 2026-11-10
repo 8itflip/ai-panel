@@ -436,6 +436,18 @@ class PullRequestGroups(unittest.TestCase):
         self.assertEqual(groups, {"Personal": 1, "Client": 1, "other": 1})
 
 
+class PollerPace(unittest.TestCase):
+    def test_polls_faster_only_while_ci_runs(self):
+        poller = server.Poller(lambda: [], 60, fast=15)
+        poller.value = [{"ci": "success"}, {"ci": None}]
+        self.assertEqual(poller.next_sleep(), 60)
+        poller.value = [{"ci": "success"}, {"ci": "pending"}]
+        self.assertEqual(poller.next_sleep(), 15)
+        self.assertEqual(server.Poller(lambda: [], 60).next_sleep(), 60, "no fast pace without `fast`")
+        poller.value = {"claude": {}}  # status pages are a dict, never fast
+        self.assertEqual(poller.next_sleep(), 60)
+
+
 def _run(rid, workflow, branch, status, conclusion, updated):
     return {"id": rid, "workflow_id": workflow, "name": "CI", "display_title": "commit %d" % rid,
             "head_branch": branch, "status": status, "conclusion": conclusion, "updated_at": updated,

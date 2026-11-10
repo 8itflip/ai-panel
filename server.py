@@ -898,12 +898,20 @@ def window_pace(bar):
 # ---------- data refreshed in the background (GitHub, GitLab, status, git) ----------
 
 class Poller(threading.Thread):
-    """Polls a slow source every `interval` s and keeps the last good result on errors."""
+    """Polls a slow source every `interval` s and keeps the last good result on errors.
 
-    def __init__(self, fn, interval):
+    With `fast`, it polls every `fast` s while an item still has CI running, so a finished run
+    stops showing as running within seconds instead of up to a whole interval later."""
+
+    def __init__(self, fn, interval, fast=None):
         super().__init__(daemon=True)
-        self.fn, self.interval = fn, interval
+        self.fn, self.interval, self.fast = fn, interval, fast
         self.value, self.error, self.at = None, None, 0
+
+    def next_sleep(self):
+        running = isinstance(self.value, list) and any(
+            isinstance(p, dict) and p.get("ci") in ("pending", "expected") for p in self.value)
+        return self.fast if self.fast and running else self.interval
 
     def run(self):
         while True:
@@ -913,7 +921,7 @@ class Poller(threading.Thread):
                 self.error = str(exc)
             except Exception as exc:
                 self.error = "%s: %s" % (exc.__class__.__name__, exc)
-            time.sleep(self.interval)
+            time.sleep(self.next_sleep())
 
     def snapshot(self):
         stale = time.time() - self.at > 3 * self.interval
@@ -1138,10 +1146,12 @@ def service_status():
     return out
 
 
-_github = Poller(github_prs, SLOW_POLL)
-_gitlab = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_mrs(h), SLOW_POLL) for g in PR_GROUPS if g.get("gitlab")}
-_github_pipelines = Poller(github_pipelines, SLOW_POLL)
-_gitlab_pipelines = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_pipelines(h), SLOW_POLL)
+# Faster while CI is running. GitHub pipelines cost one request per repository, so they speed up less.
+_github = Poller(github_prs, SLOW_POLL, fast=20)
+_gitlab = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_mrs(h), SLOW_POLL, fast=15)
+           for g in PR_GROUPS if g.get("gitlab")}
+_github_pipelines = Poller(github_pipelines, SLOW_POLL, fast=30)
+_gitlab_pipelines = {g["gitlab"]: Poller(lambda h=g["gitlab"]: gitlab_pipelines(h), SLOW_POLL, fast=15)
                      for g in PR_GROUPS if g.get("gitlab")}
 _status = Poller(service_status, SLOW_POLL)
 
