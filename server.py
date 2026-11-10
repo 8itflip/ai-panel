@@ -75,7 +75,7 @@ STATUS_PAGES = {
     "claude": "https://status.claude.com/api/v2/summary.json",
     "codex": "https://status.openai.com/api/v2/summary.json",
 }
-SLOW_POLL = 120  # s — GitHub i strony statusu
+SLOW_POLL = 60  # s — GitHub, GitLab and the status pages
 STALE_AFTER = 2 * 24 * 3600 * 1000  # ms without activity before a Claude session counts as idle
 
 STATIC_TYPES = {".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml"}
@@ -928,7 +928,7 @@ query {
   }
 }
 fragment pr on PullRequest {
-  number title url isDraft reviewDecision updatedAt
+  number title url isDraft reviewDecision createdAt updatedAt
   repository { name owner { login } }
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }
@@ -952,6 +952,7 @@ def github_prs():
             "owner": n["repository"]["owner"]["login"],
             "draft": n.get("isDraft"), "review": review, "decision": n.get("reviewDecision"),
             "ci": rollup.lower() if rollup else None, "updated": iso_to_ms(n.get("updatedAt")),
+            "created": iso_to_ms(n.get("createdAt")),
         }
 
     out, seen = [], set()
@@ -969,7 +970,7 @@ query {
     review: reviewRequestedMergeRequests(state: opened, first: 10, sort: UPDATED_DESC) { nodes { ...mr } }
   }
 }
-fragment mr on MergeRequest { iid title webUrl draft updatedAt project { name } headPipeline { status } }
+fragment mr on MergeRequest { iid title webUrl draft createdAt updatedAt project { name } headPipeline { status } }
 """
 GL_PIPELINE = {"SUCCESS": "success", "FAILED": "failure", "RUNNING": "pending", "PENDING": "pending",
                "CREATED": "pending", "PREPARING": "pending", "WAITING_FOR_RESOURCE": "pending"}
@@ -1004,7 +1005,7 @@ def gitlab_mrs(host):
                 "repo": (n.get("project") or {}).get("name") or "", "owner": None,
                 "draft": n.get("draft"), "review": review, "decision": None,
                 "ci": GL_PIPELINE.get(((n.get("headPipeline") or {}).get("status") or "").upper()),
-                "updated": iso_to_ms(n.get("updatedAt")),
+                "updated": iso_to_ms(n.get("updatedAt")), "created": iso_to_ms(n.get("createdAt")),
             })
     return out
 
