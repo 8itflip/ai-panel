@@ -81,16 +81,8 @@ zalogowanego `glab`: `glab auth login --hostname <host>`. PR-y innych właścici
 Blok Pipeline'y używa tych samych grup.
 Po zmianie pliku zrestartuj serwer.
 
-Stream Deck (opcjonalnie): `streamdeck/` to plugin (sam Node, bez zależności) z klawiszami: sesje
-czekające na Ciebie (naciśnięcie otwiera najdłużej czekającą), limit 5 h z resetem (naciśnięcie przełącza
-konto), najbliższe spotkanie (na zielono w oknie dołączania, naciśnięcie dołącza), wyciszenie mikrofonu,
-kontekst kubectl (czerwony dla `prd`/`prod`, naciśnięcie przechodzi do następnego ulubionego), Amphetamine
-oraz dowolna komenda w tle albo w oknie terminala. Instalacja: `./streamdeck/install.sh` (link do
-pluginów Stream Decka i restart aplikacji), usunięcie: `./streamdeck/install.sh --uninstall`. Akcje są
-w kategorii „AI Panel”; podpisy w języku systemu.
-
 Testy (bez zależności; test interfejsu używa Chrome bez okna, jeśli jest zainstalowany):
-`python3 -m unittest discover -s tests` i `node --test tests/i18n.test.mjs tests/streamdeck.test.mjs`.
+`python3 -m unittest discover -s tests` i `node --test tests/costs.test.mjs tests/i18n.test.mjs`.
 GitHub Actions uruchamia je przy każdym pushu.
 
 Restart okna kiosku albo serwera (np. po zmianie `kiosk.conf`):
