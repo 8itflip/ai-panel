@@ -165,7 +165,7 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in self?.rememberRelocated() }
         }
         guard let screen = panelScreen() else {
-            window?.orderOut(nil)  // display unplugged: hide instead of falling back to another screen
+            closeWindow()  // display unplugged: go away instead of falling back to another screen
             return
         }
         let win = window ?? makeWindow()
@@ -198,6 +198,21 @@ final class Kiosk: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         window = win
         webView = web
         return win
+    }
+
+    /// Drops the window and its page; the next screensChanged() builds a fresh one. Hiding is not enough:
+    /// the page is never throttled (see makeWindow and the activity above), so its CSS animations kept
+    /// running in the hidden window and WindowServer kept compositing them at the display refresh rate.
+    func closeWindow() {
+        retry?.invalidate()
+        retry = nil
+        webView?.navigationDelegate = nil
+        webView?.stopLoading()
+        window?.orderOut(nil)
+        window?.contentView = nil
+        window = nil
+        webView = nil
+        yielding = false
     }
 
     /// Steps behind other apps' windows on the panel display and comes back on top once they are gone.
